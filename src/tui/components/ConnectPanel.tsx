@@ -3,7 +3,7 @@ import { Box, Text, useInput } from 'ink';
 import { PROVIDER_PRESETS, configPath, maskKey, type ProviderPreset } from '../../config.js';
 import { describeProbe, probeConnection, type ProbeResult } from '../../probe.js';
 import type { ResolvedConfig } from '../../types.js';
-import { InputBar, type ShortcutKey } from './InputBar.js';
+import { InputBar } from './InputBar.js';
 import { theme } from '../theme.js';
 
 export interface ConnectionDraft {
@@ -27,7 +27,12 @@ export interface ConnectPanelProps {
   error: string | null;
   input: string;
   setInput: (value: string) => void;
-  onShortcut: (input: string, key: ShortcutKey) => boolean;
+  /** 选服务商时的上下移动 */
+  onMove: (delta: number) => void;
+  /** 选服务商时回车确认（这一步没有输入框） */
+  onConfirmProvider: () => void;
+  /** Esc 取消（等价于 onCancel，供内部输入框使用） */
+  onEscape: () => void;
   onSubmit: (value: string) => void;
   onRetest: () => void;
   onSave: () => void;
@@ -82,28 +87,49 @@ export function ConnectPanel({
   error,
   input,
   setInput,
-  onShortcut,
+  onEscape,
   onSubmit,
   onRetest,
   onSave,
   onCancel,
+  onMove,
+  onConfirmProvider,
 }: ConnectPanelProps): React.JSX.Element {
-  // 这几个步骤没有输入框，必须由面板自己接收按键，
-  // 否则 Tab/↑↓/Enter 会完全没有响应（Ink 的按键只在有 useInput 时才被消费）。
+  /**
+   * 「选服务商」和「完成」两步没有输入框，必须由面板自己接收按键；
+   * 有输入框的步骤则由 InputBar 自己处理（含 Esc）。
+   * 两者严格互斥，避免同一个按键被处理两次 —— 例如在 Key 输入框里
+   * 打 `s` 不该触发「保存」。
+   */
   const hasInputBar = step === 'baseUrl' || step === 'apiKey' || step === 'model';
   useInput(
     (input, key) => {
-      onShortcut(input, {
-        ctrl: key.ctrl,
-        meta: key.meta,
-        tab: key.tab,
-        return: key.return,
-        escape: key.escape,
-        backspace: key.backspace,
-        delete: key.delete,
-        upArrow: key.upArrow,
-        downArrow: key.downArrow,
-      });
+      if (key.escape) {
+        onCancel();
+        return;
+      }
+      if (key.upArrow) {
+        onMove(-1);
+        return;
+      }
+      if (key.downArrow) {
+        onMove(1);
+        return;
+      }
+      if (step === 'provider' && key.return) {
+        onConfirmProvider();
+        return;
+      }
+      if (step === 'done') {
+        if (key.return || input === 's' || input === 'S') {
+          onSave();
+          return;
+        }
+        if (input === 't' || input === 'T') {
+          onRetest();
+          return;
+        }
+      }
     },
     { isActive: !hasInputBar },
   );
@@ -132,7 +158,7 @@ export function ConnectPanel({
           current={draft.baseUrl}
           input={input}
           setInput={setInput}
-          onShortcut={onShortcut}
+          onEscape={onEscape}
           onSubmit={onSubmit}
           placeholder={draft.baseUrl || config.baseUrl}
         />
@@ -142,7 +168,7 @@ export function ConnectPanel({
         <KeyStep
           input={input}
           setInput={setInput}
-          onShortcut={onShortcut}
+          onEscape={onEscape}
           onSubmit={onSubmit}
           hasExisting={Boolean(draft.apiKey)}
           masked={maskKey(draft.apiKey)}
@@ -156,7 +182,7 @@ export function ConnectPanel({
           current={draft.model}
           input={input}
           setInput={setInput}
-          onShortcut={onShortcut}
+          onEscape={onEscape}
           onSubmit={onSubmit}
           placeholder={draft.model || config.model}
         />
@@ -247,7 +273,7 @@ function FieldStep({
   current,
   input,
   setInput,
-  onShortcut,
+  onEscape,
   onSubmit,
   placeholder,
 }: {
@@ -256,7 +282,8 @@ function FieldStep({
   current: string;
   input: string;
   setInput: (v: string) => void;
-  onShortcut: (input: string, key: ShortcutKey) => boolean;
+  /** Esc：取消向导 */
+  onEscape: () => void;
   onSubmit: (v: string) => void;
   placeholder: string;
 }): React.JSX.Element {
@@ -275,7 +302,7 @@ function FieldStep({
           value={input}
           onChange={setInput}
           onSubmit={onSubmit}
-          onShortcut={onShortcut}
+          onEscape={onEscape}
           placeholder={placeholder}
           active
         />
@@ -291,14 +318,15 @@ function FieldStep({
 function KeyStep({
   input,
   setInput,
-  onShortcut,
+  onEscape,
   onSubmit,
   hasExisting,
   masked,
 }: {
   input: string;
   setInput: (v: string) => void;
-  onShortcut: (input: string, key: ShortcutKey) => boolean;
+  /** Esc：取消向导 */
+  onEscape: () => void;
   onSubmit: (v: string) => void;
   hasExisting: boolean;
   masked: string;
@@ -316,7 +344,7 @@ function KeyStep({
         </Box>
       ) : null}
       <Box marginTop={1}>
-        <MaskedInput value={input} onChange={setInput} onSubmit={onSubmit} onShortcut={onShortcut} />
+        <MaskedInput value={input} onChange={setInput} onSubmit={onSubmit} onEscape={onEscape} />
       </Box>
       <Box marginTop={1}>
         <Text color={theme.dim}>
@@ -332,12 +360,13 @@ function MaskedInput({
   value,
   onChange,
   onSubmit,
-  onShortcut,
+  onEscape,
 }: {
   value: string;
   onChange: (v: string) => void;
   onSubmit: (v: string) => void;
-  onShortcut: (input: string, key: ShortcutKey) => boolean;
+  /** Esc：取消向导 */
+  onEscape: () => void;
 }): React.JSX.Element {
   const visible = value.length <= 4 ? value : `••••••${value.slice(-4)}`;
   return (
@@ -346,7 +375,7 @@ function MaskedInput({
         value={value}
         onChange={onChange}
         onSubmit={onSubmit}
-        onShortcut={onShortcut}
+        onEscape={onEscape}
         placeholder="sk-…"
         active
       />

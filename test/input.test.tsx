@@ -1,12 +1,15 @@
 /**
- * InputBar 的行为测试：重点验证“快捷键不会漏进输入框”。
- * 这是实际踩过的坑——用 ink-text-input 时 Ctrl-G 会把 'g' 插进输入框。
+ * InputBar 的行为测试（insert 模式）。
+ *
+ * 模态之后这个组件的职责变简单了：**只管文本**，不再拦截任何快捷键。
+ * 原来那批「快捷键不能漏进输入框」的测试因此失去意义 ——
+ * 冲突在设计上就不存在了：normal 模式下本组件 isActive=false。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import { render } from 'ink-testing-library';
-import { InputBar, type ShortcutKey } from '../src/tui/components/InputBar.tsx';
+import { InputBar } from '../src/tui/components/InputBar.tsx';
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 30));
 
@@ -20,14 +23,16 @@ async function type(instance: ReturnType<typeof render>, text: string) {
 /** 受控组件测试壳：把 value 存进 React state，模拟真实用法。 */
 function Harness({
   initial = '',
-  onShortcut,
   active = true,
+  onEscape,
+  onQuit,
   onSubmitSpy,
   onChangeSpy,
 }: {
   initial?: string;
-  onShortcut?: (input: string, key: ShortcutKey) => boolean;
   active?: boolean;
+  onEscape?: () => void;
+  onQuit?: () => void;
   onSubmitSpy?: (v: string) => void;
   onChangeSpy?: (v: string) => void;
 }): React.JSX.Element {
@@ -39,97 +44,93 @@ function Harness({
       onChangeSpy?.(v);
     },
     onSubmit: (v: string) => onSubmitSpy?.(v),
-    onShortcut,
+    onEscape: () => onEscape?.(),
+    onQuit,
     active,
   });
 }
 
 test('InputBar: 普通字符进入输入框', async () => {
   const seen: string[] = [];
-  const instance = render(
-    React.createElement(Harness, { onChangeSpy: (v: string) => seen.push(v) }),
-  );
+  const instance = render(React.createElement(Harness, { onChangeSpy: (v: string) => seen.push(v) }));
   await type(instance, 'ls -la');
   assert.equal(seen.at(-1), 'ls -la');
+  instance.unmount();
+});
+
+test('InputBar: 中文与管道符也能正常输入', async () => {
+  const seen: string[] = [];
+  const instance = render(React.createElement(Harness, { onChangeSpy: (v: string) => seen.push(v) }));
+  await type(instance, "awk '{print $1}' f | sort");
+  assert.equal(seen.at(-1), "awk '{print $1}' f | sort");
+  instance.unmount();
 });
 
 test('InputBar: 回车触发 onSubmit', async () => {
   let submitted = '';
   const instance = render(
-    React.createElement(Harness, {
-      initial: 'ls',
-      onSubmitSpy: (v: string) => {
-        submitted = v;
-      },
-    }),
+    React.createElement(Harness, { initial: 'ls', onSubmitSpy: (v: string) => (submitted = v) }),
   );
   instance.stdin.write('\r');
   await tick();
   assert.equal(submitted, 'ls');
+  instance.unmount();
 });
 
-test('InputBar: 快捷键命中时不插入文本', async () => {
+test('InputBar: Esc 触发 onEscape，不提交也不改内容', async () => {
+  let escaped = 0;
+  let submitted = '';
   const seen: string[] = [];
-  const hits: string[] = [];
   const instance = render(
     React.createElement(Harness, {
+      initial: 'chmod 600 f',
+      onEscape: () => (escaped += 1),
+      onSubmitSpy: (v: string) => (submitted = v),
       onChangeSpy: (v: string) => seen.push(v),
-      onShortcut: (input: string, key: ShortcutKey) => {
-        if (key.ctrl) {
-          hits.push(input);
-          return true;
-        }
-        return false;
-      },
     }),
   );
-
-  // Ctrl-G = \u0007
-  instance.stdin.write('\u0007');
+  instance.stdin.write('\u001b');
   await tick();
-  assert.deepEqual(hits, ['g'], '应识别为 ctrl+g');
-  assert.deepEqual(seen, [], '快捷键不得把 g 插入输入框');
-
-  // Ctrl-X = \u0018
-  instance.stdin.write('\u0018');
-  await tick();
-  assert.deepEqual(hits, ['g', 'x']);
-  assert.deepEqual(seen, [], '快捷键不得把 x 插入输入框');
+  assert.equal(escaped, 1, '应回到命令模式');
+  assert.equal(submitted, '', 'Esc 不应提交');
+  assert.deepEqual(seen, [], 'Esc 不应修改内容');
+  instance.unmount();
 });
 
-test('InputBar: 未被消费的 ctrl 组合也不插入字母', async () => {
+test('InputBar: Ctrl-C 退出（insert 模式下 App 收不到按键，由这里转发）', async () => {
+  let quit = 0;
+  const instance = render(React.createElement(Harness, { onQuit: () => (quit += 1) }));
+  instance.stdin.write('\u0003');
+  await tick();
+  assert.equal(quit, 1);
+  instance.unmount();
+});
+
+test('InputBar: 未绑定的 ctrl 组合不插入字母', async () => {
   const seen: string[] = [];
-  const instance = render(
-    React.createElement(Harness, { onChangeSpy: (v: string) => seen.push(v), onShortcut: () => false }),
-  );
+  const instance = render(React.createElement(Harness, { onChangeSpy: (v: string) => seen.push(v) }));
   instance.stdin.write('\u0002'); // Ctrl-B
   await tick();
   assert.deepEqual(seen, [], 'ctrl 组合不是文本输入');
+  instance.unmount();
 });
 
-test('InputBar: active=false 时不接收字符，但快捷键仍生效', async () => {
+test('InputBar: active=false 时完全不接收字符', async () => {
   const seen: string[] = [];
-  const hits: string[] = [];
+  let submitted = '';
   const instance = render(
     React.createElement(Harness, {
       active: false,
       onChangeSpy: (v: string) => seen.push(v),
-      onShortcut: (input: string, key: ShortcutKey) => {
-        if (key.ctrl) {
-          hits.push(input);
-          return true;
-        }
-        return false;
-      },
+      onSubmitSpy: (v: string) => (submitted = v),
     }),
   );
-
   await type(instance, 'abc');
-  assert.deepEqual(seen, [], '忙碌时不应接受输入');
-
-  instance.stdin.write('\u0001'); // Ctrl-A
+  instance.stdin.write('\r');
   await tick();
-  assert.deepEqual(hits, ['a'], '忙碌时快捷键仍可用');
+  assert.deepEqual(seen, [], '非输入模式下不应接受字符');
+  assert.equal(submitted, '', '非输入模式下回车不应提交');
+  instance.unmount();
 });
 
 test('InputBar: 退格删除光标前一个字符', async () => {
@@ -137,107 +138,36 @@ test('InputBar: 退格删除光标前一个字符', async () => {
   const instance = render(
     React.createElement(Harness, { initial: 'ls -la', onChangeSpy: (v: string) => seen.push(v) }),
   );
-  instance.stdin.write('\u007f'); // backspace
+  instance.stdin.write('\u007f');
   await tick();
   assert.equal(seen.at(-1), 'ls -l');
+  instance.unmount();
+});
+
+test('InputBar: 左右键移动光标后插入位置正确', async () => {
+  const seen: string[] = [];
+  const instance = render(
+    React.createElement(Harness, { initial: 'ab', onChangeSpy: (v: string) => seen.push(v) }),
+  );
+  instance.stdin.write('\u001b[D'); // ← 光标移到 a 与 b 之间
+  await tick();
+  instance.stdin.write('X');
+  await tick();
+  assert.equal(seen.at(-1), 'aXb');
+  instance.unmount();
 });
 
 test('InputBar: 空值显示占位符', () => {
   const instance = render(
-    React.createElement(InputBar, { value: '', onChange: () => {}, onSubmit: () => {}, placeholder: '输入命令' }),
+    React.createElement(InputBar, {
+      value: '',
+      onChange: () => {},
+      onSubmit: () => {},
+      onEscape: () => {},
+      placeholder: '输入命令',
+      active: true,
+    }),
   );
   assert.match(instance.lastFrame() ?? '', /输入命令/);
-});
-
-/**
- * zo/zc 折叠键。
- * 为什么不用 Ctrl-T：部分终端把 Ctrl-T 占作别用，而且 Ink 8 会主动丢弃鼠标事件，
- * 所以既不能点击、Ctrl 组合也不可靠。改用 Vim 的 fold 键位，纯字母、无冲突。
- */
-test('InputBar: 前缀键 z 不进入输入框', async () => {
-  const seen: string[] = [];
-  const hits: string[] = [];
-  const instance = render(
-    React.createElement(Harness, {
-      onChangeSpy: (v: string) => seen.push(v),
-      onShortcut: (input: string) => {
-        if (input === 'z') {
-          hits.push(input);
-          return true; // 消费掉，等第二个键
-        }
-        return false;
-      },
-    }),
-  );
-
-  instance.stdin.write('z');
-  await tick();
-  assert.deepEqual(hits, ['z'], 'z 应被识别为前缀');
-  assert.deepEqual(seen, [], 'z 不应进入输入框');
-});
-
-test('InputBar: 前缀未命中时后续字符照常输入', async () => {
-  const seen: string[] = [];
-  let pending = false;
-  const instance = render(
-    React.createElement(Harness, {
-      onChangeSpy: (v: string) => seen.push(v),
-      onShortcut: (input: string) => {
-        if (pending) {
-          pending = false;
-          if (input === 'o' || input === 'c') return true;
-          return false; // 不是 zo/zc，让字符进输入框
-        }
-        if (input === 'z') {
-          pending = true;
-          return true;
-        }
-        return false;
-      },
-    }),
-  );
-
-  instance.stdin.write('z');
-  await tick();
-  instance.stdin.write('e');
-  await tick();
-  assert.equal(seen.at(-1), 'e', 'z 之后的普通字符必须能输入，不能被吞掉');
-});
-
-test('InputBar: zo 与 zc 分别触发展开和收起', async () => {
-  const events: string[] = [];
-  let pending = false;
-  const instance = render(
-    React.createElement(Harness, {
-      onShortcut: (input: string) => {
-        if (pending) {
-          pending = false;
-          if (input === 'o') {
-            events.push('expand');
-            return true;
-          }
-          if (input === 'c') {
-            events.push('collapse');
-            return true;
-          }
-          return false;
-        }
-        if (input === 'z') {
-          pending = true;
-          return true;
-        }
-        return false;
-      },
-    }),
-  );
-
-  instance.stdin.write('z');
-  await tick();
-  instance.stdin.write('o');
-  await tick();
-  instance.stdin.write('z');
-  await tick();
-  instance.stdin.write('c');
-  await tick();
-  assert.deepEqual(events, ['expand', 'collapse']);
+  instance.unmount();
 });

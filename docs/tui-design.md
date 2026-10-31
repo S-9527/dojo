@@ -18,7 +18,7 @@
    ❯ 输入命令，或 /hint 要提示…                                        ← 输入区
 
  回车提交 · /hint /ask /answer /next /topic /stats 也可用
- Tab 面板 · Ctrl-N 换题 · Ctrl-G 提示 · Ctrl-X 答案 · Ctrl-A 提问 · Ctrl-R 复盘 · Ctrl-C 退出
+ NORMAL   i 输入 · n 换题 · h 提示 · a 答案 · A 提问 · zo/zc 思考 · Tab 面板 · ? 帮助 · q 退出
 ```
 
 ## 面板（Tab 循环）
@@ -30,13 +30,13 @@
 ## 状态机
 
 ```
-loading ──> awaiting ──提交──> grading ──> graded ──Esc/Ctrl-N──> loading
+loading ──> awaiting ──提交──> grading ──> graded ──n──> loading
                  │                          │
-                 │                          └─Ctrl-X──> revealed(答案叠在卡片下方)
+                 │                          └─a──> revealed(答案叠在卡片下方)
                  │
-                 ├─Ctrl-G──> hinting ──> graded(显示提示)
-                 ├─Ctrl-A──> asking(聊天面板流式输出) ──> awaiting
-                 └─Ctrl-R──> review(统计面板显示复盘) ──> awaiting
+                 ├─h──> hinting ──> graded(显示提示)
+                 ├─A──> asking(聊天面板流式输出) ──> awaiting
+                 └─r──> review(统计面板显示复盘) ──> awaiting
 ```
 
 `busy`（loading/grading/hinting/asking）期间输入框 `active=false`：不接受字符，但快捷键仍然可用，
@@ -50,6 +50,12 @@ loading ──> awaiting ──提交──> grading ──> graded ──Esc/Ct
 
 ## 踩过的坑
 
+> 以下 1、2、4 条在改成**模态输入**（normal / insert）后已经不复存在 ——
+> 命令与文本分成两条通道，冲突从设计上消失。保留记录是因为它们解释了
+> 「为什么要用模态」，也是后来者容易重犯的错。
+
+
+
 ### 1. Ink 没有事件冒泡
 
 `useInput` 是基于 eventEmitter 的广播：**所有**注册了 `useInput` 的组件都会收到同一个按键，
@@ -57,6 +63,7 @@ loading ──> awaiting ──提交──> grading ──> graded ──Esc/Ct
 
 `ink-text-input` 内部只拦截 `ctrl+c` / `tab` / 方向键，其它 ctrl 组合的字母仍会被当作普通文本插入。
 实测按 `Ctrl-G` 后输入框里会出现 `g`，按 `Ctrl-X` 会出现 `x`，变成 `gx`。
+（模态之后不再用 Ctrl 组合做命令，此问题消失。）
 
 **解法**：自研 `InputBar`（`src/tui/components/InputBar.tsx`），用单一 `useInput` 统一分发：
 
@@ -407,6 +414,48 @@ if (reasoningText) onReasoning?.(reasoningText);
 教训：**加了一个快捷键之后，要确认它在每个面板里都有作用对象**。
 只在一个面板里实现 UI，另一个面板的快捷键就成了「无提示的哑键」——
 用户按下去没反应，还会把按键当成普通输入。这比没有快捷键更让人困惑。
+
+## 改用 Vim 风格模态（重要重构）
+
+### 动机
+
+前后修了四五个「按键相关」的 bug，回头看它们的根因完全相同：
+
+| 现象 | 根因 |
+| --- | --- |
+| `zo` 漏进输入框，变成输入 `zo` | 命令与文本共用一条通道 |
+| `Ctrl-T` 在部分终端无反应 | Ctrl 组合容易被终端占用 |
+| 没有输入框时 Esc 无人接收 | 按键处理挂在 InputBar 上，没有它就没人注册 |
+| `z` 前缀必须加超时 | 无法区分「前缀键」和「想输入的字母」 |
+| 提示键不能用 `Ctrl-H` | 终端里 Ctrl-H 就是退格，二者不可区分 |
+
+这些不是各自独立的小问题，而是**同一个架构缺陷的多种表现**：
+一条输入通道同时承担命令与文本，就只能靠各种启发式去打补丁。
+
+### 改法
+
+```
+normal 模式：所有按键都是命令   ← App 的 useInput（始终注册）
+insert 模式：所有按键都是文本   ← InputBar 的 useInput（isActive 互斥）
+```
+
+两个 `useInput` 的 `isActive` **严格互补**，同一个按键永远只有一个处理者。
+
+### 消掉的补丁
+
+- 删掉 `onShortcut` 转发机制（InputBar 不再需要拦截快捷键）
+- 删掉「前缀未命中就交还输入框」的分支（normal 模式下不存在这个问题）
+- 删掉「没有输入框时的兜底 useInput」（normal 处理器始终注册，天然覆盖）
+- 不再依赖任何 Ctrl 组合（只保留 `Ctrl-C` 退出）
+
+### 新增的必要约束
+
+1. **提交后回到 normal**：否则下一个按键会被当成文本
+   （实测踩到：提交后按 `zo` 又变成了输入 "zo"）
+2. **请求进行中不允许进入 insert**：此时 `Esc` 的语义是中断，
+   若还在输入模式，`Esc` 会先被 InputBar 吃掉变成「回 normal」，中断就按不出来了
+3. **模式必须始终可见**：底部常驻 `NORMAL` / `INSERT` 指示条，
+   否则用户不知道按键会被怎么解释
 
 ## 参考 Claude Code 的观察
 

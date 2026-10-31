@@ -3,101 +3,84 @@ import { Box, Text, useInput } from 'ink';
 import { theme } from '../theme.js';
 
 /**
- * 自实现的单行输入框。
+ * 单行输入框，**只在 insert 模式下工作**。
  *
- * 为什么不用 ink-text-input：Ink 的 useInput 是事件广播，没有 stopPropagation，
- * 所有注册了 useInput 的组件都会收到同一个按键。ink-text-input 只拦截
- * ctrl+c / tab / 方向键，其它 ctrl 组合（如 ctrl+g）的字母仍会被插进输入框，
- * 导致按快捷键时输入框里多出 'g'。
- *
- * 这里改为「单一 useInput 统一分发」：先判断是否命中快捷键并消费掉该按键，
- * 否则才当作文本输入。快捷键与文本输入从此天然互斥。
+ * 模态之后这里不再需要拦截快捷键：
+ * normal 模式由 App 统一处理（那时本组件 isActive=false），
+ * 所以「按快捷键却把字母打进输入框」这类问题在设计上就不存在了。
  */
 export interface InputBarProps {
   value: string;
   onChange: (value: string) => void;
+  /** 回车提交 */
   onSubmit: (value: string) => void;
+  /** Esc：回到命令模式 */
+  onEscape: () => void;
+  /** Ctrl-C：退出程序（insert 模式下 App 收不到按键，所以这里转发） */
+  onQuit?: () => void;
   placeholder?: string;
-  /** 快捷键回调：返回 true 表示该按键已被消费，不再插入文本。 */
-  onShortcut?: (input: string, key: ShortcutKey) => boolean;
-  /** 光标是否激活。false 时不接收普通字符，但快捷键仍然可用。 */
+  /** 是否处于输入模式 */
   active?: boolean;
-}
-
-export interface ShortcutKey {
-  ctrl: boolean;
-  meta: boolean;
-  tab: boolean;
-  return: boolean;
-  escape: boolean;
-  backspace: boolean;
-  delete: boolean;
-  upArrow: boolean;
-  downArrow: boolean;
+  /** 前缀提示符，默认 ❯ */
+  prompt?: string;
 }
 
 export function InputBar({
   value,
   onChange,
   onSubmit,
+  onEscape,
+  onQuit,
   placeholder = '',
-  onShortcut,
   active = true,
+  prompt = '❯ ',
 }: InputBarProps): React.JSX.Element {
   const [cursor, setCursor] = React.useState(value.length);
 
-  // 外部清空/替换 value 时把光标跟到末尾
+  // 外部替换/清空内容时把光标收进合法范围
   React.useEffect(() => {
     setCursor((c) => Math.min(c, value.length));
   }, [value.length]);
 
-  useInput((input, key) => {
-    const shortcutKey: ShortcutKey = {
-      ctrl: key.ctrl,
-      meta: key.meta,
-      tab: key.tab,
-      return: key.return,
-      escape: key.escape,
-      backspace: key.backspace,
-      delete: key.delete,
-      upArrow: key.upArrow,
-      downArrow: key.downArrow,
-    };
+  useInput(
+    (input, key) => {
+      if (key.ctrl && input === 'c') {
+        onQuit?.();
+        return;
+      }
+      if (key.escape) {
+        onEscape();
+        return;
+      }
+      if (key.return) {
+        onSubmit(value);
+        return;
+      }
+      // 上下键在输入行里没有意义（历史由 normal 模式管理），忽略即可
+      if (key.upArrow || key.downArrow || key.tab) return;
+      if (key.leftArrow) {
+        setCursor((c) => Math.max(0, c - 1));
+        return;
+      }
+      if (key.rightArrow) {
+        setCursor((c) => Math.min(value.length, c + 1));
+        return;
+      }
+      if (key.backspace || key.delete) {
+        if (cursor === 0) return;
+        onChange(value.slice(0, cursor - 1) + value.slice(cursor));
+        setCursor((c) => Math.max(0, c - 1));
+        return;
+      }
+      // ctrl/meta 组合不是文本，避免把 'a'..'z' 打进输入框
+      if (key.ctrl || key.meta) return;
+      if (!input) return;
 
-    // 快捷键优先，命中即消费，绝不落到文本输入
-    if (onShortcut?.(input, shortcutKey)) return;
-    if (!active) return;
-
-    if (key.return) {
-      onSubmit(value);
-      return;
-    }
-    if (key.escape) return;
-    // 上下键留给候选菜单导航；菜单没消费时才落到这里，此时不做任何事
-    if (key.upArrow || key.downArrow) return;
-    if (key.leftArrow) {
-      setCursor((c) => Math.max(0, c - 1));
-      return;
-    }
-    if (key.rightArrow) {
-      setCursor((c) => Math.min(value.length, c + 1));
-      return;
-    }
-    if (key.backspace || key.delete) {
-      if (cursor === 0) return;
-      const next = value.slice(0, cursor - 1) + value.slice(cursor);
-      onChange(next);
-      setCursor((c) => Math.max(0, c - 1));
-      return;
-    }
-    // ctrl/meta 组合不是文本，避免把 'a'..'z' 插进输入框
-    if (key.ctrl || key.meta) return;
-    if (!input) return;
-
-    const next = value.slice(0, cursor) + input + value.slice(cursor);
-    onChange(next);
-    setCursor((c) => c + input.length);
-  });
+      onChange(value.slice(0, cursor) + input + value.slice(cursor));
+      setCursor((c) => c + input.length);
+    },
+    { isActive: active },
+  );
 
   const before = value.slice(0, cursor);
   const atCursor = value.slice(cursor, cursor + 1);
@@ -105,10 +88,13 @@ export function InputBar({
 
   return (
     <Box>
-      <Text color={theme.brand} bold>
-        {'  ❯ '}
+      <Text color={active ? theme.brand : theme.dim} bold>
+        {`  ${prompt}`}
       </Text>
-      {value.length === 0 ? (
+      {!active ? (
+        // 命令模式下不显示光标，明确「现在打字不会进去」
+        <Text color={theme.dim}>{value || placeholder}</Text>
+      ) : value.length === 0 ? (
         <Text>
           <Text inverse>{placeholder.slice(0, 1) || ' '}</Text>
           <Text color={theme.dim}>{placeholder.slice(1)}</Text>

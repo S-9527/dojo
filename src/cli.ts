@@ -55,9 +55,19 @@ export function printHelp(): void {
     dojo config               检查配置
     dojo connect              非交互式配置接口（配合 --base-url/--api-key/--model）
 
-  TUI 快捷键
-    Tab 切换面板   Ctrl-N 换题   Ctrl-G 提示   Ctrl-X 答案
-    Ctrl-A 提问    Ctrl-R 复盘   zo/zc 思考过程   Ctrl-C 退出
+  TUI 按键（Vim 风格模态：normal 模式全是命令，insert 模式全是文本）
+
+    normal 模式
+      i            进入输入模式          Esc      中断请求 / 清空输入
+      n            换题                h        提示
+      a            看答案              A        提问（切到对话并输入）
+      zo / zc      展开 / 收起思考      j/k u/d  滚动思考过程
+      g/G          思考开头/最新        ?        帮助
+      Tab          切换面板            s/r/c    统计 / 复盘 / 连接
+      q            退出
+
+    insert 模式
+      Enter 提交 · Esc 回到命令模式 · Ctrl-C 退出
 
   主题  ${TOPIC_KEYS.map((k) => `${k}(${TOPICS[k].label})`).join('  ')}
   难度  ${DIFFICULTY_KEYS.map((k) => `${k}(${DIFFICULTIES[k].label})`).join('  ')}

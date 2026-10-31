@@ -7,11 +7,15 @@ export function Frame({
   title,
   status,
   footer,
+  footerSuffix,
   children,
 }: {
   title: string;
   status: React.ReactNode;
+  /** 底部主行：模式指示等长期可见的信息 */
   footer: React.ReactNode;
+  /** 底部附加行：上下文相关的临时提示（可为空） */
+  footerSuffix?: string;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
@@ -36,8 +40,9 @@ export function Frame({
       <Box flexDirection="column" paddingX={1}>
         {children}
       </Box>
-      <Box paddingX={1}>
-        <Text color={theme.dim}>{footer}</Text>
+      <Box paddingX={1} flexDirection="column">
+        {footer}
+        {footerSuffix ? <Text color={theme.dim}>{footerSuffix}</Text> : null}
       </Box>
     </Box>
   );

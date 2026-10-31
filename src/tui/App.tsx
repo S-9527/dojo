@@ -8,6 +8,7 @@ import { DIFFICULTIES, TOPICS, TOPIC_KEYS, resolveTopic } from '../topics.js';
 import { recordAttempt, summarize } from '../store.js';
 import { COMMANDS, argChoices, filterCommands, resolveCommandName, shouldShowMenu } from '../commands.js';
 import { Frame } from './components/base.js';
+import { KeyHelp, ModeBar } from './components/ModeBar.js';
 import { ExerciseCard } from './components/ExerciseCard.js';
 import { ChatPanel } from './components/ChatPanel.js';
 import { StatsPanel } from './components/StatsPanel.js';
@@ -16,7 +17,8 @@ import { ErrorPanel, GradePanel, HintPanel } from './components/GradePanel.js';
 import { StatusLine } from './components/StatusLine.js';
 import { ReasoningPanel } from './components/ReasoningPanel.js';
 import { estimateTokens } from './spinner.js';
-import { InputBar, type ShortcutKey } from './components/InputBar.js';
+import { INSERT_KEYS, NORMAL_KEYS, insertHint, isPrintable, normalHint, type Mode } from './keymap.js';
+import { InputBar } from './components/InputBar.js';
 import { theme } from './theme.js';
 import { scrollBy, wrapToLines, type ViewportState } from './scroll.js';
 import { REASONING_VIEWPORT_HEIGHT } from './components/ReasoningPanel.js';
@@ -39,10 +41,12 @@ const PANEL_ORDER: Panel[] = ['practice', 'chat', 'stats'];
 /**
  * 主应用。
  *
- * 按键处理集中在一个 onShortcut 回调里（见 InputBar），
- * 这样快捷键与文本输入不会互相污染——Ink 没有事件冒泡，
- * 多个 useInput 会同时收到同一按键，用 ink-text-input 时
- * Ctrl-G 的 'g' 会被插进输入框。
+ * 采用 Vim 风格的模态输入：normal 模式下所有按键都是命令，
+ * insert 模式下所有按键都是文本。两个 useInput 严格互斥
+ * （normal 由本组件处理且始终注册，insert 由 InputBar 处理）。
+ *
+ * 这样一次性消掉了之前一整类问题：快捷键漏进输入框、
+ * 前缀键要加超时、没有输入框时按键无人接收、Ctrl 组合被终端占用。
  */
 export function App({
   tutor: initialTutor,
@@ -88,6 +92,9 @@ export function App({
    * Vim 的 fold 键位，比 Ctrl 组合更不容易被终端占用。
    */
   const [zPending, setZPending] = React.useState(false);
+
+  /** 当前模式：normal = 所有按键都是命令；insert = 所有按键都是文本 */
+  const [mode, setMode] = React.useState<Mode>('normal');
 
   // z 前缀不能一直挂着：超时自动清除，避免下一次按键被误当成 zo/zc
   React.useEffect(() => {
@@ -458,6 +465,9 @@ export function App({
   const submitInput = React.useCallback(
     (value: string) => {
       const trimmed = value.trim();
+      // 提交后一律回到命令模式（Vim 习惯）：否则接下来的按键会被当成文本，
+      // 例如想按 zo 展开思考，却把 "zo" 打进了输入框。
+      setMode('normal');
       if (!trimmed) return;
       if (trimmed.startsWith('/')) {
         setAnswer('');
@@ -469,241 +479,125 @@ export function App({
     [runCommand, submit],
   );
 
-  /** 统一按键分发：命中快捷键返回 true，该按键不会再进输入框。 */
-  const handleShortcut = React.useCallback(
-    (input: string, key: ShortcutKey): boolean => {
-      if (key.ctrl && input === 'c') {
-        exit();
-        return true;
-      }
-
-      // 向导激活时接管全部按键，避免漏到主界面（例如 Tab 切面板）
-      if (connect.active) {
-        if (key.escape) {
-          connect.cancel();
-          return true;
-        }
-        if (key.upArrow || key.downArrow) {
-          // 只有选服务商那一步用得到方向键
-          return connect.move(key.upArrow ? -1 : 1);
-        }
-        if (connect.step === 'done') {
-          if (key.return || input === 's' || input === 'S') {
-            connect.save();
-            return true;
-          }
-          if (input === 't' || input === 'T') {
-            connect.retest();
-            return true;
-          }
-          return true;
-        }
-        // provider 步骤没有输入框，Enter 直接确认；其余步骤交给 InputBar
-        if (connect.step === 'provider' && key.return) {
-          connect.submit('');
-          return true;
-        }
-        return false;
-      }
-
-      // 候选菜单打开时优先处理导航键，Tab 用于补全而不是切面板
-      if (menuOpen) {
-        if (key.upArrow) {
-          setMenuIndex((i) => (i - 1 + menuItems.length) % Math.max(1, menuItems.length));
-          return true;
-        }
-        if (key.downArrow) {
-          setMenuIndex((i) => (i + 1) % Math.max(1, menuItems.length));
-          return true;
-        }
-        if (key.escape) {
-          setDismissedAt(input);
-          setMenuIndex(0);
-          return true;
-        }
-        if (key.tab) {
-          // 参数区优先补全参数，否则补全指令名
-          if (inArgPhase) {
-            const arg = argItems[0];
-            if (arg) setInput(`/topic ${arg.value}`);
-            return true;
-          }
-          const picked = menuItems[menuIndex];
-          if (picked) {
-            setInput(`/${picked.name}${picked.takesArg ? ' ' : ''}`);
-            setMenuIndex(0);
-          }
-          return true;
-        }
-        // Enter 时：输入与候选完全一致就直接执行，否则先补全成选中项
-        if (key.return) {
-          if (inArgPhase) {
-            const arg = argItems[0];
-            if (arg) {
-              // 只有一个候选就直接执行，多个则先补全等用户确认
-              if (argItems.length === 1) {
-                setInput(`/topic ${arg.value}`);
-                return false;
-              }
-              setInput(`/topic ${arg.value}`);
-              return true;
-            }
-            return false;
-          }
-          const picked = menuItems[menuIndex];
-          // 注意：Enter 时 input 是 "\r"，不能拿它当输入内容，
-          // 要判断的是输入框里已经敲的指令名。
-          if (picked && resolveCommandName(typedName) === picked.name) {
-            return false; // 交给 InputBar 走 onSubmit 执行
-          }
-          if (picked) {
-            setInput(`/${picked.name}${picked.takesArg ? ' ' : ''}`);
-            setMenuIndex(0);
-            return true;
-          }
-          return false;
-        }
-      }
-
-      if (key.tab) {
-        const at = PANEL_ORDER.indexOf(panel);
-        setPanel(PANEL_ORDER[(at + 1) % PANEL_ORDER.length] as Panel);
-        return true;
-      }
-      if (key.ctrl && input === 'n') {
-        void nextExercise(topic);
-        return true;
-      }
-      // Ctrl-H 在终端里就是退格，无法作为快捷键，所以提示用 Ctrl-G
-      if (key.ctrl && input === 'g') {
-        setPanel('practice');
-        void requestHint();
-        return true;
-      }
-      if (key.ctrl && input === 'x') {
-        setRevealed((r) => !r);
-        return true;
-      }
-      if (key.ctrl && input === 'a') {
-        setPanel('chat');
-        return true;
-      }
-      if (key.ctrl && input === 'r') {
-        void runReview();
-        return true;
-      }
-      // 思考过程的展开/关闭：zo 展开、zc 关闭（沿用 Vim fold 键位）。
-      // 不用 Ctrl 组合是因为 Ctrl-T 在部分终端被占用，且无法用鼠标点击
-      // —— Ink 8 会主动丢弃鼠标事件。
-      const canToggleReasoning = Boolean(reasoningText);
-      if (canToggleReasoning) {
-        if (zPending) {
-          setZPending(false);
-          if (input === 'o') {
-            setShowReasoning(true);
-            setReasoningView({ offset: null });
-            return true;
-          }
-          if (input === 'c') {
-            setShowReasoning(false);
-            return true;
-          }
-          // 不是 zo/zc：把 z 当普通字符处理，交给输入框
-          return false;
-        }
-        if (!key.ctrl && !key.meta && input === 'z') {
-          setZPending(true);
-          return true;
-        }
-        // 兼容旧习惯：Ctrl-T 仍然可切换
-        if (key.ctrl && input === 't') {
-          setShowReasoning((v) => !v);
-          return true;
-        }
-      }
-
-      // 思考过程展开时，方向键/PgUp/PgDn/Home/End 用于滚动
+  /**
+   * normal 模式的命令处理。
+   *
+   * 模态的关键：这个 useInput **始终注册**（除向导外），所以不存在
+   * 「没有输入框就收不到按键」的问题 —— 之前那类 bug 从此在设计上消失。
+   * insert 模式下本处理器停用，按键全部交给 InputBar。
+   */
+  const handleNormalKey = React.useCallback(
+    (input: string, key: {
+      ctrl: boolean; meta: boolean; tab: boolean; return: boolean; escape: boolean;
+      upArrow: boolean; downArrow: boolean;
+    }): void => {
+      // ---- 思考过程的滚动（只在展开时有意义）----
       if (showReasoning && reasoningText) {
-        // 与 ChatPanel 里 ScrollBox 的换行宽度保持一致（按显示列，中文占 2 列）
         const lines = wrapToLines(reasoningText, Math.max(16, (process.stdout.columns ?? 80) - 16));
-        const moved = (delta: number): true => {
-          setReasoningView((v) => scrollBy(lines, REASONING_VIEWPORT_HEIGHT, v, delta));
-          return true;
-        };
-        if (key.upArrow) return moved(-1);
-        if (key.downArrow) return moved(1);
-        // PgUp/PgDn 的转义序列在部分终端/复用器下识别不到，额外提供 u/d 单键
-        if ((key as { pageUp?: boolean }).pageUp || input === 'u') return moved(-REASONING_VIEWPORT_HEIGHT);
-        if ((key as { pageDown?: boolean }).pageDown || input === 'd') return moved(REASONING_VIEWPORT_HEIGHT);
-        // Home/End 在各终端的转义序列不统一，额外提供 g / G 两个单键
-        if ((key as { home?: boolean }).home || input === 'g') {
-          setReasoningView({ offset: 0 });
-          return true;
-        }
-        if ((key as { end?: boolean }).end || input === 'G') {
-          setReasoningView({ offset: null });
-          return true;
-        }
+        const move = (delta: number) => setReasoningView((v) => scrollBy(lines, REASONING_VIEWPORT_HEIGHT, v, delta));
+        if (key.upArrow || input === 'k') return move(-1);
+        if (key.downArrow || input === 'j') return move(1);
+        if (input === 'u') return move(-REASONING_VIEWPORT_HEIGHT);
+        if (input === 'd') return move(REASONING_VIEWPORT_HEIGHT);
+        if (input === 'g') return setReasoningView({ offset: 0 });
+        if (input === 'G') return setReasoningView({ offset: null });
       }
+
+      // ---- zo / zc：展开与收起 ----
+      // 模态下所有按键都是命令，不会再漏进输入框，所以不再需要「前缀未命中就交给输入框」
+      if (zPending) {
+        setZPending(false);
+        if (input === 'o') {
+          setShowReasoning(true);
+          setReasoningView({ offset: null });
+          return;
+        }
+        if (input === 'c') {
+          setShowReasoning(false);
+          return;
+        }
+        if (input === 'z') {
+          setZPending(true); // 连按 zz 也当展开，跟 Vim 一致
+          return;
+        }
+        return; // 其它键：忽略这一轮前缀
+      }
+      if (input === 'z') {
+        setZPending(true);
+        return;
+      }
+
+      // ---- 全局按键 ----
       if (key.escape) {
-        // 正在请求时，Esc 优先用于中断 —— 这是最需要它的时刻
+        // 正在请求时优先中断 —— 这是最需要 Esc 的时刻
         if (busy && abortRef.current) {
           abortRef.current.abort();
           setNotice('已中断');
-          return true;
+          return;
         }
-        if (showHelp) {
-          setShowHelp(false);
-          return true;
-        }
-        if (panel !== 'practice') {
-          setPanel('practice');
-          return true;
-        }
-        if (phase === 'graded') {
-          void nextExercise(topic);
-          return true;
-        }
-        return false;
+        if (showHelp) return setShowHelp(false);
+        setInput(''); // 清空当前输入
+        return;
       }
-      return false;
+      if (key.tab) {
+        const at = PANEL_ORDER.indexOf(panel);
+        setPanel(PANEL_ORDER[(at + 1) % PANEL_ORDER.length] as Panel);
+        return;
+      }
+      if (input === '?') return setShowHelp((v) => !v);
+      if (input === 'q') {
+        exit();
+        return;
+      }
+      if (input === 'i' || key.return) {
+        if (busy) {
+          setNotice('请求进行中，Esc 可中断');
+          return;
+        }
+        setNotice('');
+        setMode('insert');
+        return;
+      }
+
+      // ---- 面板相关 ----
+      if (input === 'n') return void nextExercise(topic);
+      if (input === 'h') {
+        setPanel('practice');
+        void requestHint();
+        return;
+      }
+      if (input === 'a') return setRevealed(true);
+      if (input === 'A') {
+        if (busy) return setNotice('请求进行中，Esc 可中断');
+        setPanel('chat');
+        setMode('insert');
+        return;
+      }
+      if (input === 's') return setPanel('stats');
+      if (input === 'r') return void runReview();
+      if (input === 'c') return connect.open();
+
+      // 未绑定的键：给个提示，避免用户以为程序没反应
+      if (isPrintable(input)) setNotice(`未绑定按键：${input}（按 ? 看全部）`);
     },
     [
-      panel, phase, topic, nextExercise, requestHint, runReview, exit, busy,
-      menuOpen, menuItems, menuIndex, showHelp, setInput, connect, inArgPhase, argItems,
+      showReasoning, reasoningText, zPending, busy, showHelp, panel, topic,
+      nextExercise, requestHint, runReview, connect, exit, setInput,
     ],
   );
 
-  /**
-   * 输入框是否已渲染。
-   * 按键处理挂在 InputBar 的 onShortcut 上，所以「没有输入框」的时刻
-   * （例如首次出题、exercise 还是 null）就完全没有组件接收按键，
-   * 导致 Esc 无法中断。这里用一个兜底 useInput 补上。
-   */
-  const inputBarVisible = connect.active
-    ? connect.step === 'baseUrl' || connect.step === 'apiKey' || connect.step === 'model'
-    : panel === 'chat' || panel === 'stats' || Boolean(exercise);
-
+  // normal 模式：命令处理。始终注册，因此不会出现「按键无人接收」。
   useInput(
-    (input, key) => {
-      handleShortcut(input, {
-        ctrl: key.ctrl,
-        meta: key.meta,
-        tab: key.tab,
-        return: key.return,
-        escape: key.escape,
-        backspace: key.backspace,
-        delete: key.delete,
-        upArrow: key.upArrow,
-        downArrow: key.downArrow,
-      });
-    },
-    { isActive: !inputBarVisible },
+    (input, key) => handleNormalKey(input, key),
+    { isActive: !connect.active && mode === 'normal' },
   );
 
+  // 底部提示：向导有自己的说明；候选菜单打开时优先提示菜单操作
   const footer = connect.active
     ? 'Esc 取消向导 · ↑↓ 选服务商 · Enter 下一步'
-    : 'Tab 面板 · Ctrl-N 换题 · Ctrl-G 提示 · Ctrl-X 答案 · Ctrl-A 提问 · Ctrl-R 复盘 · zo/zc 思考 · Ctrl-C 退出';
+    : menuOpen
+      ? '↑↓ 选择 · Tab / Enter 补全 · Esc 关闭候选'
+      : '';
 
   // 状态栏优先显示连接状态，让用户随时知道当前在跟谁说话
   const status = disconnected
@@ -712,14 +606,13 @@ export function App({
         config.mock ? 'Mock' : config.model
       }`;
 
-  const navHint = connect.active
-    ? footer
-    : menuOpen
-      ? '↑↓ 选择 · Tab / Enter 补全 · Esc 关闭候选'
-      : footer;
-
   return (
-    <Frame title="dojo" status={status} footer={navHint}>
+    <Frame
+      title="dojo"
+      status={status}
+      footer={<ModeBar mode={mode} notice={notice} />}
+      footerSuffix={footer}
+    >
       {connect.active ? (
         <ConnectPanel
           config={config}
@@ -730,7 +623,9 @@ export function App({
           error={connect.error}
           input={connect.input}
           setInput={connect.setInput}
-          onShortcut={handleShortcut}
+          onMove={connect.move}
+          onConfirmProvider={() => connect.submit('')}
+          onEscape={connect.cancel}
           onSubmit={connect.submit}
           onRetest={connect.retest}
           onSave={connect.save}
@@ -785,26 +680,27 @@ export function App({
           ) : null}
           {phase === 'hinting' ? <StatusLine busyText="正在生成提示" /> : null}
 
-          {showHelp ? <HelpPanel onClose={() => setShowHelp(false)} /> : null}
+          {showHelp ? <KeyHelp mode={mode} /> : null}
 
           {exercise ? (
             <Box marginTop={1} flexDirection="column">
               <InputBar
                 value={answer}
                 onChange={setAnswer}
-                onShortcut={handleShortcut}
                 onSubmit={submitInput}
+                onEscape={() => setMode('normal')}
+                onQuit={exit}
                 placeholder="输入命令，或 /hint 要提示…"
-                active={!busy}
+                active={mode === 'insert' && !busy}
               />
               {menuOpen ? (
                 <CommandMenu items={menuItems} activeIndex={menuIndex} input={input} argItems={argItems} />
               ) : null}
               <Box marginTop={1}>
+                {/* 只在「刚判完题」这种需要指引下一步的时候提示；
+                    通用按键交给底部的模式栏，避免两行重复 */}
                 <Text color={theme.dim}>
-                  {phase === 'graded'
-                    ? 'Esc / Ctrl-N 进入下一题 · Ctrl-X 看答案 · Ctrl-G 提示'
-                    : '回车提交 · 输入 / 查看全部指令'}
+                  {phase === 'graded' ? '按 n 换下一题 · a 看答案 · h 要提示' : ' '}
                 </Text>
               </Box>
             </Box>
@@ -841,13 +737,16 @@ export function App({
             <InputBar
               value={question}
               onChange={setQuestion}
-              onShortcut={handleShortcut}
               onSubmit={(value) => {
                 const trimmed = value.trim();
-                if (trimmed) void askQuestion(trimmed);
+                if (!trimmed) return;
+                setMode('normal');
+                void askQuestion(trimmed);
               }}
+              onEscape={() => setMode('normal')}
+              onQuit={exit}
               placeholder="问点什么，例如：uniq -c 为什么要先 sort？"
-              active={!busy}
+              active={mode === 'insert' && !busy}
             />
             <Box marginTop={1}>
               <Text color={theme.dim}>回车发送 · 回答不会直接给出当前题答案</Text>
@@ -864,10 +763,11 @@ export function App({
             <InputBar
               value={answer}
               onChange={setAnswer}
-              onShortcut={handleShortcut}
               onSubmit={submitInput}
+              onEscape={() => setMode('normal')}
+              onQuit={exit}
               placeholder="输入 / 查看指令，或 /topic <主题> 换主题…"
-              active={!busy}
+              active={mode === 'insert' && !busy}
             />
             {menuOpen ? (
               <CommandMenu items={menuItems} activeIndex={menuIndex} input={input} argItems={argItems} />
@@ -880,28 +780,3 @@ export function App({
 }
 
 /** 帮助面板：列出全部指令与快捷键，数据来自 commands.ts。 */
-function HelpPanel({ onClose }: { onClose: () => void }): React.JSX.Element {
-  return (
-    <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor={theme.border} paddingX={1}>
-      <Box justifyContent="space-between">
-        <Text color={theme.text} bold>
-          指令一览
-        </Text>
-        <Text color={theme.dim}>Esc 关闭</Text>
-      </Box>
-      <Box flexDirection="column" marginTop={0}>
-        {COMMANDS.map((cmd) => (
-          <Box key={cmd.name}>
-            <Box width={12} flexShrink={0}>
-              <Text color={theme.accent}>{`/${cmd.name}`}</Text>
-            </Box>
-            <Text color={theme.muted}>{cmd.summary}</Text>
-          </Box>
-        ))}
-      </Box>
-      <Box marginTop={1}>
-        <Text color={theme.dim}>Tab 面板 · Ctrl-N 换题 · Ctrl-G 提示 · Ctrl-X 答案 · Ctrl-A 提问 · Ctrl-R 复盘</Text>
-      </Box>
-    </Box>
-  );
-}
