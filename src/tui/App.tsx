@@ -10,6 +10,7 @@ import { COMMANDS, argChoices, filterCommands, resolveCommandName, shouldShowMen
 import { Static } from 'ink';
 import { Frame } from './components/base.js';
 import { AnswerPanel } from './components/AnswerPanel.js';
+import { TranscriptView } from './components/TranscriptView.js';
 import { KeyHelp, ModeBar } from './components/ModeBar.js';
 import { ExerciseCard } from './components/ExerciseCard.js';
 import { ChatPanel } from './components/ChatPanel.js';
@@ -22,7 +23,7 @@ import { estimateTokens } from './spinner.js';
 import { INSERT_KEYS, NORMAL_KEYS, insertHint, isPrintable, normalHint, type Mode } from './keymap.js';
 import { InputBar } from './components/InputBar.js';
 import { theme } from './theme.js';
-import { scrollBy, wrapToLines, type ViewportState } from './scroll.js';
+import { estimateLines, estimateTranscriptLines, scrollBy, wrapToLines, type ViewportState } from './scroll.js';
 import { REASONING_VIEWPORT_HEIGHT } from './components/ReasoningPanel.js';
 
 type Panel = 'practice' | 'chat' | 'stats';
@@ -96,6 +97,16 @@ export function App({
    * 等于看不到自己答了什么 —— 现在每次作答都作为独立条目留下。
    */
   const [transcript, setTranscript] = React.useState<TranscriptItem[]>([]);
+
+  /**
+   * 转录区滚动偏移（行）。全屏下终端没有回滚，滚动必须自己做。
+   * null 表示「贴底自动跟随」，有新内容时自动滚到最新。
+   */
+  const [scrollOffset, setScrollOffset] = React.useState<number | null>(null);
+  /** 转录区可见高度（行），由终端总高度减去顶栏/输入区/底栏后得出 */
+  const [viewportHeight, setViewportHeight] = React.useState(20);
+  /** 转录内容总行数的估算值，用于夹住滚动偏移 */
+  const [contentLines, setContentLines] = React.useState(0);
   const [revealed, setRevealed] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState('');
@@ -159,10 +170,11 @@ export function App({
   const handleRequestError = React.useCallback(
     (err: unknown, startedAt: number, kind: 'exercise' | 'grade') => {
       const elapsedMs = Date.now() - startedAt;
-      // 必须在这里退出「进行中」阶段。之前只有 nextExercise 的 finally
-      // 做了这件事，而 submit 的错误路径没有 —— 于是中断虽然生效
-      // （请求确实取消了），界面却一直停在「正在判题」、计时器继续走，
-      // 看起来就像 Esc 没反应。
+
+      // 必须在这里退出「进行中」阶段。
+      // 之前只有 nextExercise 的 finally 做了这件事，而 submit 的错误路径没有，
+      // 结果中断虽然生效（请求确实取消了），界面却一直停在「正在判题」、
+      // 计时器继续走 —— 看起来就像 Esc 没反应。
       setPhase('awaiting');
 
       if (isAbortError(err)) {
@@ -272,6 +284,22 @@ export function App({
   // 会导致换行宽度算错、每行被二次折行，视口高度就守不住了。
   const { stdout } = useStdout();
   const width = (stdout as unknown as { columns?: number })?.columns ?? process.stdout.columns ?? 80;
+  const rows = (stdout as unknown as { rows?: number })?.rows ?? process.stdout.rows ?? 24;
+
+  // 转录可见高度 = 终端行数 - 顶栏 - 输入区 - 模式栏/提示
+  React.useEffect(() => {
+    setViewportHeight(Math.max(6, rows - 9));
+  }, [rows]);
+
+  React.useEffect(() => {
+    setContentLines(estimateTranscriptLines(transcript, width));
+  }, [transcript, width]);
+
+  /** 实际生效的偏移：null 表示贴底跟随 */
+  const effectiveOffset = React.useMemo(() => {
+    const maxOffset = Math.max(0, contentLines - viewportHeight);
+    return scrollOffset === null ? maxOffset : Math.min(scrollOffset, maxOffset);
+  }, [scrollOffset, contentLines, viewportHeight]);
 
   const nextExercise = React.useCallback(
     async (nextTopic: TopicKey) => {
@@ -351,6 +379,7 @@ export function App({
           onReasoning: (text) => setReasoning(text),
         });
         setTranscript((prev) => [...prev, { kind: 'attempt', answer: text, grade: result }]);
+        setScrollOffset(null); // 新内容出现时回到最新
         setPhase('graded');
         setLastRun({ kind: 'grade', elapsedMs: Date.now() - startedAt, ok: true });
         const updated = recordAttempt({
@@ -556,6 +585,32 @@ export function App({
         if (input === 'G') return setReasoningView({ offset: null });
       }
 
+      // ---- 转录区滚动 ----
+      // 全屏没有终端回滚，所以用 Ctrl 组合单独控制「历史」的滚动，
+      // 与思考过程的 j/k（那是另一块视口）区分开。
+      if (key.ctrl && input === 'u') {
+        const delta = viewportHeight;
+        setScrollOffset((prev) => {
+          const current = prev === null ? Math.max(0, contentLines - viewportHeight) : prev;
+          return Math.max(0, current - delta);
+        });
+        return;
+      }
+      if (key.ctrl && input === 'd') {
+        const delta = viewportHeight;
+        setScrollOffset((prev) => {
+          const current = prev === null ? Math.max(0, contentLines - viewportHeight) : prev;
+          const next = current + delta;
+          // 滚到底就恢复自动跟随
+          return next >= contentLines - viewportHeight ? null : next;
+        });
+        return;
+      }
+      if (key.ctrl && input === 'e') {
+        setScrollOffset(null); // 直接回到最新
+        return;
+      }
+
       // ---- zo / zc：展开与收起 ----
       // 模态下所有按键都是命令，不会再漏进输入框，所以不再需要「前缀未命中就交给输入框」
       if (zPending) {
@@ -636,6 +691,7 @@ export function App({
     [
       showReasoning, reasoningText, zPending, busy, showHelp, panel, topic,
       nextExercise, requestHint, runReview, connect, exit, setInput,
+      viewportHeight, contentLines,
     ],
   );
 
@@ -659,48 +715,74 @@ export function App({
         config.mock ? 'Mock' : config.model
       }`;
 
-  return (
-    <>
-      {/* 转录区：只渲染一次，内容超出屏幕会自然滚入终端回滚缓冲区。
-          必须放在根层级 —— 嵌在实时区域里会把实时内容挤到 Static 之下。 */}
-      <Static items={transcript}>
-        {(item, i) => (
-          <Box key={i} flexDirection="column">
-            {item.kind === 'header' ? (
-              <Box justifyContent="space-between" paddingX={1}>
-                <Text>
-                  <Text color={theme.text.brand} bold>
-                    {'◆ '}
-                  </Text>
-                  <Text color={theme.text.brand} bold>
-                    {item.brand}
-                  </Text>
+  /** 把转录条目切成「行数 + 节点」块，供视口按可见行渲染 */
+  const transcriptBlocks = React.useMemo(() => {
+    const inner = Math.max(20, width - 8);
+    return transcript
+      .filter((item) => item.kind !== 'header')
+      .map((item, i) => {
+        if (item.kind === 'exercise') {
+          const lines =
+            2 + 1 +
+            estimateLines(item.exercise.title, inner) +
+            estimateLines(item.exercise.scenario, inner) + 1 +
+            estimateLines(item.exercise.question, inner) + 1 +
+            item.exercise.acceptance.reduce((n, a) => n + estimateLines(a, inner), 0) + 1;
+          return { lines, node: <ExerciseCard key={i} exercise={item.exercise} index={item.index} /> };
+        }
+        if (item.kind === 'hint') {
+          return {
+            lines: estimateLines(item.text, inner) + 3,
+            node: <HintPanel key={i} text={item.text} level={item.level} total={item.total} />,
+          };
+        }
+        return {
+          lines:
+            1 + estimateLines(item.answer, inner) + 2 +
+            estimateLines(item.grade.reason, inner) +
+            (item.grade.corrected_answer ? 1 + estimateLines(item.grade.corrected_answer, inner) : 0) +
+            (item.grade.knowledge_points.length ? 1 : 0) + 1,
+          node: (
+            <Box key={i} flexDirection="column">
+              <Box marginTop={1} paddingLeft={2}>
+                <Text color={theme.text.brand} bold>
+                  {'你 ❯ '}
                 </Text>
-                <Text color={theme.text.muted}>{item.status}</Text>
+                <Text color={theme.text.primary}>{item.answer}</Text>
               </Box>
-            ) : item.kind === 'exercise' ? (
-              <ExerciseCard exercise={item.exercise} index={item.index} />
-            ) : item.kind === 'hint' ? (
-              <HintPanel text={item.text} level={item.level} total={item.total} />
-            ) : (
-              <Box flexDirection="column">
-                <Box marginTop={1} paddingLeft={2}>
-                  <Text color={theme.text.brand} bold>
-                    {'你 ❯ '}
-                  </Text>
-                  <Text color={theme.text.primary}>{item.answer}</Text>
-                </Box>
-                <GradePanel grade={item.grade} />
-              </Box>
-            )}
-          </Box>
-        )}
-      </Static>
+              <GradePanel grade={item.grade} />
+            </Box>
+          ),
+        };
+      });
+  }, [transcript, width]);
+
+  return (
+    // 根容器必须限制高度：Ink 的 flex 需要一个有确定高度的父容器作参照，
+    // 直接返回 Fragment 时 flexGrow 无处可分配，转录区会被压成 0 行。
+    <Box flexDirection="column" height={rows}>
+      {/* 顶栏：固定不滚动。全屏模式下去掉了「只打印一次」的标题，
+          因为备用屏幕没有回滚，固定顶栏才是正确的信息位置 */}
+      <Box paddingX={1} justifyContent="space-between">
+        <Text>
+          <Text color={theme.text.brand} bold>
+            {'◆ dojo'}
+          </Text>
+        </Text>
+        <Text color={theme.text.muted}>{status}</Text>
+      </Box>
+
+      {/* 转录区：内容全量渲染，靠负 margin 裁出可见窗口。
+          全屏（备用屏幕）没有终端回滚，所以滚动必须自己做。 */}
+      <TranscriptView offset={effectiveOffset} height={viewportHeight}>
+        {transcriptBlocks}
+      </TranscriptView>
 
       <Frame
         status={status}
-        footer={<ModeBar mode={mode} notice={notice} />}
-        footerSuffix={footer}
+        hideHeader
+        footer={<ModeBar mode={mode} />}
+        footerSuffix={notice || footer}
       >
       {connect.active ? (
         <ConnectPanel
@@ -749,11 +831,6 @@ export function App({
 
           {revealed && exercise ? <AnswerPanel exercise={exercise} /> : null}
           {error ? <ErrorPanel message={error} /> : null}
-          {notice ? (
-            <Box marginTop={1}>
-              <Text color={theme.text.muted}>{notice}</Text>
-            </Box>
-          ) : null}
           {phase === 'grading' || (lastRun?.kind === 'grade' && grade) ? (
             <StatusLine
               busyText="大模型正在判题"
@@ -862,7 +939,7 @@ export function App({
         </Box>
       ) : null}
       </Frame>
-    </>
+    </Box>
   );
 }
 

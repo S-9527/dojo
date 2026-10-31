@@ -115,3 +115,58 @@ export function scrollBy(lines: string[], height: number, state: ViewportState, 
   // 滚到底部时恢复自动跟随，这样流式输出能继续跟
   return { offset: next >= maxStart ? null : next };
 }
+
+/**
+ * 估算转录内容的总行数。
+ *
+ * 精确测量需要知道每个块的折行结果，成本高且容易和实际渲染不一致；
+ * 这里按字符数折行估算，只用于把滚动偏移夹在合理范围内。
+ * 宁可略高估——低估会让用户滚不到底。
+ */
+export function estimateLines(text: string, width: number): number {
+  if (!text) return 1;
+  return wrapToLines(text, width).length;
+}
+
+/**
+ * 估算整份转录渲染出来有多少行。
+ *
+ * 用途仅限于把滚动偏移夹在合理范围内（滚过头会露出空白），
+ * 所以按内容字符数粗略估算即可，不必与真实渲染逐行相等。
+ * 每类块额外加边框/间距的固定开销。
+ */
+export function estimateTranscriptLines(items: Array<{
+  kind: string;
+  exercise?: { title: string; scenario: string; question: string; acceptance: string[] };
+  answer?: string;
+  grade?: { reason: string; corrected_answer: string; knowledge_points: string[] };
+  text?: string;
+}>, width: number): number {
+  const inner = Math.max(20, width - 8);
+  let total = 0;
+
+  for (const item of items) {
+    if (item.kind === 'header') {
+      total += 1;
+    } else if (item.kind === 'exercise' && item.exercise) {
+      // 上下边框 2 + 标题 1 + 场景/要求各按折行算 + 验收点
+      total += 2 + 1;
+      total += estimateLines(item.exercise.title, inner);
+      total += estimateLines(item.exercise.scenario, inner) + 1;
+      total += estimateLines(item.exercise.question, inner) + 1;
+      for (const a of item.exercise.acceptance) total += estimateLines(a, inner);
+      total += 1;
+    } else if (item.kind === 'hint' && item.text) {
+      total += estimateLines(item.text, inner) + 3;
+    } else if (item.kind === 'attempt') {
+      total += 1; // 「你 ❯ …」
+      total += estimateLines(item.answer ?? '', inner);
+      total += 2; // 判题面板边框
+      total += estimateLines(item.grade?.reason ?? '', inner);
+      if (item.grade?.corrected_answer) total += 1 + estimateLines(item.grade.corrected_answer, inner);
+      if (item.grade?.knowledge_points.length) total += 1;
+      total += 1;
+    }
+  }
+  return total;
+}

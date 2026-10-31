@@ -32,7 +32,13 @@ export async function startTui({
       progress,
       startWithConnect,
     }),
-    { exitOnCtrlC: false },
+    {
+      exitOnCtrlC: false,
+      // 全屏：使用终端备用屏幕缓冲区（vim / htop 同款机制）。
+      // 代价是**没有终端回滚**，所以转录滚动必须在应用内实现
+      // —— 见 App 里的 scrollOffset 与 TranscriptView。
+      alternateScreen: true,
+    },
   );
 
   await instance.waitUntilExit();

@@ -2,10 +2,20 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { theme, wrapText } from '../theme.js';
 
+/**
+ * 终端总行数。
+ * 根容器必须显式给高度：Ink 里 height="100%" 对根 Box 不生效，
+ * 不给的话底栏会浮在屏幕中间、下方留一片空白。
+ */
+function terminalRows(): number {
+  return process.stdout.rows ?? 24;
+}
+
 /** 应用外壳：顶栏 + 主体 + 底部快捷键。 */
 export function Frame({
   title,
   status,
+  hideHeader = false,
   footer,
   footerSuffix,
   children,
@@ -13,6 +23,8 @@ export function Frame({
   /** 标题可选：品牌名只在启动时打印一次（放进转录），实时区域不再固定显示 */
   title?: string;
   status: React.ReactNode;
+  /** 调用方自己画了顶栏时置 true，避免重复 */
+  hideHeader?: boolean;
   /** 底部主行：模式指示等长期可见的信息 */
   footer: React.ReactNode;
   /** 底部附加行：上下文相关的临时提示（可为空） */
@@ -20,30 +32,26 @@ export function Frame({
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <Box flexDirection="column">
-      <Box
-        borderStyle="round"
-        borderColor={theme.border.default}
-        borderBottom={false}
-        borderTop={false}
-        borderLeft={false}
-        borderRight={false}
-        paddingX={1}
-        justifyContent="space-between"
-      >
-        <Text>
-          {title ? (
-            <Text color={theme.text.brand} bold>
-              {`◆ ${title}`}
-            </Text>
-          ) : null}
-        </Text>
-        <Text color={theme.text.secondary}>{status}</Text>
-      </Box>
-      <Box flexDirection="column" paddingX={1}>
+    // 撑满整个终端高度：全屏模式下底栏必须贴在最下面，
+    // 否则会浮在屏幕中间、下方留一片空白
+    <Box flexDirection="column" height={terminalRows()}>
+      {!hideHeader ? (
+        <Box paddingX={1} justifyContent="space-between" flexShrink={0}>
+          <Text>
+            {title ? (
+              <Text color={theme.text.brand} bold>
+                {`◆ ${title}`}
+              </Text>
+            ) : null}
+          </Text>
+          <Text color={theme.text.secondary}>{status}</Text>
+        </Box>
+      ) : null}
+      {/* 主体：撑满剩余空间，内部再自行分配（转录区弹性、实时区自然高度） */}
+      <Box flexDirection="column" paddingX={1} flexGrow={1} flexShrink={1} minHeight={0}>
         {children}
       </Box>
-      <Box paddingX={1} flexDirection="column">
+      <Box paddingX={1} flexDirection="column" flexShrink={0}>
         {footer}
         {footerSuffix ? <Text color={theme.text.muted}>{footerSuffix}</Text> : null}
       </Box>
