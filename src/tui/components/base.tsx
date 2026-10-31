@@ -10,7 +10,8 @@ export function Frame({
   footerSuffix,
   children,
 }: {
-  title: string;
+  /** 标题可选：品牌名只在启动时打印一次（放进转录），实时区域不再固定显示 */
+  title?: string;
   status: React.ReactNode;
   /** 底部主行：模式指示等长期可见的信息 */
   footer: React.ReactNode;
@@ -31,9 +32,11 @@ export function Frame({
         justifyContent="space-between"
       >
         <Text>
-          <Text color={theme.text.brand} bold>
-            ◆ dojo
-          </Text>
+          {title ? (
+            <Text color={theme.text.brand} bold>
+              {`◆ ${title}`}
+            </Text>
+          ) : null}
         </Text>
         <Text color={theme.text.secondary}>{status}</Text>
       </Box>

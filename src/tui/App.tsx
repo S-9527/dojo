@@ -7,7 +7,9 @@ import { ConnectPanel } from './components/ConnectPanel.js';
 import { DIFFICULTIES, TOPICS, TOPIC_KEYS, resolveTopic } from '../topics.js';
 import { recordAttempt, summarize } from '../store.js';
 import { COMMANDS, argChoices, filterCommands, resolveCommandName, shouldShowMenu } from '../commands.js';
+import { Static } from 'ink';
 import { Frame } from './components/base.js';
+import { AnswerPanel } from './components/AnswerPanel.js';
 import { KeyHelp, ModeBar } from './components/ModeBar.js';
 import { ExerciseCard } from './components/ExerciseCard.js';
 import { ChatPanel } from './components/ChatPanel.js';
@@ -24,6 +26,16 @@ import { scrollBy, wrapToLines, type ViewportState } from './scroll.js';
 import { REASONING_VIEWPORT_HEIGHT } from './components/ReasoningPanel.js';
 
 type Panel = 'practice' | 'chat' | 'stats';
+
+/**
+ * 转录条目：已完成、不会再变的内容。
+ * 这些交给 <Static> 渲染一次，之后滚入终端回滚缓冲区，可以往上翻。
+ */
+type TranscriptItem =
+  | { kind: 'header'; brand: string; status: string }
+  | { kind: 'exercise'; index: number; exercise: Exercise }
+  | { kind: 'attempt'; answer: string; grade: Grade }
+  | { kind: 'hint'; text: string; level: number; total: number };
 type Phase = 'loading' | 'awaiting' | 'grading' | 'graded' | 'hinting' | 'asking';
 
 export interface AppProps {
@@ -72,10 +84,19 @@ export function App({
   exerciseRef.current = exercise;
   const [index, setIndex] = React.useState(0);
   const [answer, setAnswer] = React.useState('');
-  const [grade, setGrade] = React.useState<Grade | null>(null);
-  const [hint, setHint] = React.useState<{ text: string; level: number } | null>(null);
+  /**
+   * 已完成的转录条目，交给 <Static> 永久写入终端回滚缓冲区。
+   *
+   * 为什么必须用 Static：Ink 默认在「实时区域」反复重绘整帧，
+   * 内容超过一屏时早先的行会被覆盖或挤出 —— 实测连续作答时
+   * 只看得见第一次和最后一次，中间的既没渲染也查不到。
+   * Static 里的内容只渲染一次，之后自然滚入回滚缓冲区，可以往上翻。
+   *
+   * 另外之前只存「最后一次判题结果」，提交的答案从未展示过，
+   * 等于看不到自己答了什么 —— 现在每次作答都作为独立条目留下。
+   */
+  const [transcript, setTranscript] = React.useState<TranscriptItem[]>([]);
   const [revealed, setRevealed] = React.useState(false);
-  const [showAllHints, setShowAllHints] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState('');
 
@@ -230,6 +251,15 @@ export function App({
    */
   const reasoningText = reasoning;
 
+  /** 最后一次判题结果：阶段判断与状态行只需要它 */
+  const grade = React.useMemo(() => {
+    for (let i = transcript.length - 1; i >= 0; i -= 1) {
+      const item = transcript[i];
+      if (item?.kind === 'attempt') return item.grade;
+    }
+    return null;
+  }, [transcript]);
+
   const busy = phase === 'loading' || phase === 'grading' || phase === 'hinting' || phase === 'asking';
   const disconnected = !config.mock && !config.apiKey;
   // 用 useStdout 获取终端尺寸：直接读 process.stdout.columns 在 Ink 下可能拿不到实时值，
@@ -242,10 +272,7 @@ export function App({
       setPhase('loading');
       setError(null);
       setNotice('');
-      setGrade(null);
-      setHint(null);
       setRevealed(false);
-      setShowAllHints(false);
       setAnswer('');
       setReasoning('');
       setReasoningView({ offset: null });
@@ -261,6 +288,8 @@ export function App({
         setExercise(ex);
         setIndex((i) => i + 1);
         setPanel('practice');
+        // 题目本身进入转录：这样「哪道题对应哪几次作答」在回滚里也是清楚的
+        setTranscript((prev) => [...prev, { kind: 'exercise', index: prev.filter((t) => t.kind === 'exercise').length + 1, exercise: ex }]);
         setLastRun({ kind: 'exercise', elapsedMs: Date.now() - startedAt, ok: true });
       } catch (err) {
         handleRequestError(err, startedAt, 'exercise');
@@ -271,6 +300,24 @@ export function App({
     },
     [tutor, difficulty],
   );
+
+  // 标题只打印一次：放进转录而不是固定在实时区域，
+  // 否则它会一直占着屏幕、还会被 <Static> 的内容挤到中间
+  React.useEffect(() => {
+    setTranscript((prev) =>
+      prev.length === 0
+        ? [
+            {
+              kind: 'header',
+              brand: 'dojo',
+              status: `${TOPICS[initialTopic].label} · ${DIFFICULTIES[initialDifficulty].label}`,
+            },
+          ]
+        : prev,
+    );
+    // 仅首次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   React.useEffect(() => {
     // 没配 Key 时先出题必然失败，直接打开向导更省事；
@@ -297,7 +344,7 @@ export function App({
           signal,
           onReasoning: (text) => setReasoning(text),
         });
-        setGrade(result);
+        setTranscript((prev) => [...prev, { kind: 'attempt', answer: text, grade: result }]);
         setPhase('graded');
         setLastRun({ kind: 'grade', elapsedMs: Date.now() - startedAt, ok: true });
         const updated = recordAttempt({
@@ -324,10 +371,10 @@ export function App({
 
   const requestHint = React.useCallback(async () => {
     if (!exercise) return;
-    const level = hint?.level ?? 0;
+    // 已给出的提示条数 = 这一题还能不能再要提示
+    const level = transcript.filter((t) => t.kind === 'hint').length;
     if (level >= exercise.hints.length) {
-      setShowAllHints(true);
-      setNotice('提示已全部展开');
+      setNotice('提示已全部展开，按 a 可看参考答案');
       return;
     }
     setPhase('hinting');
@@ -337,13 +384,13 @@ export function App({
         signal: startAbortable(),
         onReasoning: (r) => setReasoning(r),
       });
-      setHint({ text, level: level + 1 });
+      setTranscript((prev) => [...prev, { kind: 'hint', text, level: level + 1, total: exercise.hints.length }]);
       setPhase('graded');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setPhase('awaiting');
     }
-  }, [tutor, exercise, hint]);
+  }, [tutor, exercise, transcript]);
 
   const askQuestion = React.useCallback(
     async (q: string) => {
@@ -566,7 +613,7 @@ export function App({
         void requestHint();
         return;
       }
-      if (input === 'a') return setRevealed(true);
+      if (input === 'a') return setRevealed((v) => !v); // 可反复开合
       if (input === 'A') {
         if (busy) return setNotice('请求进行中，Esc 可中断');
         setPanel('chat');
@@ -607,12 +654,48 @@ export function App({
       }`;
 
   return (
-    <Frame
-      title="dojo"
-      status={status}
-      footer={<ModeBar mode={mode} notice={notice} />}
-      footerSuffix={footer}
-    >
+    <>
+      {/* 转录区：只渲染一次，内容超出屏幕会自然滚入终端回滚缓冲区。
+          必须放在根层级 —— 嵌在实时区域里会把实时内容挤到 Static 之下。 */}
+      <Static items={transcript}>
+        {(item, i) => (
+          <Box key={i} flexDirection="column">
+            {item.kind === 'header' ? (
+              <Box justifyContent="space-between" paddingX={1}>
+                <Text>
+                  <Text color={theme.text.brand} bold>
+                    {'◆ '}
+                  </Text>
+                  <Text color={theme.text.brand} bold>
+                    {item.brand}
+                  </Text>
+                </Text>
+                <Text color={theme.text.muted}>{item.status}</Text>
+              </Box>
+            ) : item.kind === 'exercise' ? (
+              <ExerciseCard exercise={item.exercise} index={item.index} />
+            ) : item.kind === 'hint' ? (
+              <HintPanel text={item.text} level={item.level} total={item.total} />
+            ) : (
+              <Box flexDirection="column">
+                <Box marginTop={1} paddingLeft={2}>
+                  <Text color={theme.text.brand} bold>
+                    {'你 ❯ '}
+                  </Text>
+                  <Text color={theme.text.primary}>{item.answer}</Text>
+                </Box>
+                <GradePanel grade={item.grade} />
+              </Box>
+            )}
+          </Box>
+        )}
+      </Static>
+
+      <Frame
+        status={status}
+        footer={<ModeBar mode={mode} notice={notice} />}
+        footerSuffix={footer}
+      >
       {connect.active ? (
         <ConnectPanel
           config={config}
@@ -648,10 +731,8 @@ export function App({
             />
           ) : null}
 
-          {exercise ? (
-            <ExerciseCard exercise={exercise} index={index} revealed={revealed} showHints={showAllHints} />
-          ) : null}
 
+          {/* 以下都是「实时区域」：会随交互变化的内容 */}
           <ReasoningPanel
             text={reasoningText}
             expanded={showReasoning}
@@ -660,8 +741,7 @@ export function App({
             width={width}
           />
 
-          {hint ? <HintPanel text={hint.text} level={hint.level} total={exercise?.hints.length ?? 3} /> : null}
-          {grade ? <GradePanel grade={grade} /> : null}
+          {revealed && exercise ? <AnswerPanel exercise={exercise} /> : null}
           {error ? <ErrorPanel message={error} /> : null}
           {notice ? (
             <Box marginTop={1}>
@@ -775,7 +855,8 @@ export function App({
           </Box>
         </Box>
       ) : null}
-    </Frame>
+      </Frame>
+    </>
   );
 }
 

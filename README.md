@@ -90,6 +90,31 @@ npm run dev -- --mock      # tsx 直接执行 src/cli.ts
 - **NORMAL**：所有按键都是命令，**不会**打进输入框
 - **INSERT**：所有按键都是文本；`Esc` 回到 NORMAL，提交后也会自动回到 NORMAL
 
+### 转录流
+
+已完成的题目、你的每次作答、判题结果、提示都会**逐条保留**，
+滚入终端回滚缓冲区，可以往上翻：
+
+```
+ ╭─ 题目 1  文件权限修改 ────────────────────╮
+ │ 场景   在 /tmp/demo 下有 report.txt …    │
+ │ 要求   把权限改为 -rw-rw-r--，并验证。   │
+ ╰──────────────────────────────────────────╯
+
+   你 ❯ chmod 664 /tmp/demo/report.txt
+ ╭─ △ 部分正确            得分 60/100 ─────╮
+ │ 缺少 ls -l 验证步骤。                     │
+ ╰──────────────────────────────────────────╯
+
+   你 ❯ chmod 664 /tmp/demo/report.txt && ls -l /tmp/demo/report.txt
+ ╭─ ✓ 正确               得分 100/100 ─────╮
+ │ 完整达成要求。                            │
+ ╰──────────────────────────────────────────╯
+```
+
+底部输入区是唯一的「实时区域」。题目、答案、提示分别独立成块
+——因为已完成的记录只渲染一次（进入回滚缓冲区），不会随重绘丢失。
+
 ### NORMAL 模式按键
 
 | 按键 | 作用 |
@@ -379,7 +404,7 @@ SenseNova 的 Token Plan 按**积分**计费（分通用积分和 Flash-Lite 专
 npm run dev          # tsx 直跑源码
 npm run build        # tsc → dist/
 npm run typecheck    # 源码 + 测试全部类型检查
-npm test             # 198 个测试
+npm test             # 199 个测试
 ```
 
 > **注意 `src/` 里 import 写 `./xxx.js` 不是笔误。** `tsc` 不做路径重写，
@@ -441,6 +466,7 @@ src/tui/
     InputBar.tsx         自研输入框（快捷键与文本互斥）
     CommandMenu.tsx      斜杠指令候选菜单
     ReasoningPanel.tsx   思考过程展示区（两个面板共用）
+    AnswerPanel.tsx      参考答案块（可开合，独立于题目卡片）
     ModeBar.tsx          模式指示条与按键帮助
     ScrollBox.tsx        限高可滚动文本视口
     StatusLine.tsx       进行中/完成状态行

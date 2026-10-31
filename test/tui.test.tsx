@@ -6,7 +6,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import { render } from 'ink-testing-library';
+import { Box, Text } from 'ink';
 import { ExerciseCard } from '../src/tui/components/ExerciseCard.tsx';
+import { AnswerPanel } from '../src/tui/components/AnswerPanel.tsx';
 import { GradePanel, HintPanel, ErrorPanel } from '../src/tui/components/GradePanel.tsx';
 import { StatsPanel } from '../src/tui/components/StatsPanel.tsx';
 import { StatusLine } from '../src/tui/components/StatusLine.tsx';
@@ -32,33 +34,44 @@ const exercise: Exercise = normalizeExercise(
 );
 
 test('ExerciseCard: 显示题干与验收点', () => {
-  const { lastFrame } = render(React.createElement(ExerciseCard, { exercise, index: 1, revealed: false, showHints: false }));
+  const { lastFrame, unmount } = render(React.createElement(ExerciseCard, { exercise, index: 1 }));
   const frame = lastFrame() ?? '';
+  unmount();
   assert.match(frame, /找出最大的文件/);
   assert.match(frame, /列出最大的文件/);
   assert.match(frame, /只输出一行/);
 });
 
-test('ExerciseCard: 未揭晓时绝不泄露参考答案', () => {
-  const { lastFrame } = render(React.createElement(ExerciseCard, { exercise, index: 1, revealed: false, showHints: false }));
+test('ExerciseCard: 绝不泄露答案与提示', () => {
+  const { lastFrame, unmount } = render(React.createElement(ExerciseCard, { exercise, index: 1 }));
   const frame = lastFrame() ?? '';
+  unmount();
   assert.ok(!frame.includes('ls -S'), '题干阶段不应出现答案命令');
-  assert.ok(!frame.includes('提示一'), '未点提示时不应出现提示内容');
+  assert.ok(!frame.includes('提示一'), '不应在卡片里出现提示内容');
 });
 
-test('ExerciseCard: revealed 时展示答案与解析', () => {
-  const { lastFrame } = render(React.createElement(ExerciseCard, { exercise, index: 1, revealed: true, showHints: false }));
+/**
+ * 答案与提示现在是独立块，不在卡片里。
+ * 原因：卡片会被放进 <Static> 只渲染一次，而「看答案」是可切换的交互。
+ */
+test('AnswerPanel: 展示答案、解析与常见错误', () => {
+  const { lastFrame, unmount } = render(React.createElement(AnswerPanel, { exercise }));
   const frame = lastFrame() ?? '';
-  assert.match(frame, /答案/);
+  unmount();
+  assert.match(frame, /参考答案/);
   assert.match(frame, /ls -S/);
   assert.match(frame, /按大小降序/);
+  assert.match(frame, /忘记 head/);
 });
 
-test('ExerciseCard: showHints 时展示三级提示', () => {
-  const { lastFrame } = render(React.createElement(ExerciseCard, { exercise, index: 1, revealed: false, showHints: true }));
+test('AnswerPanel: 只在展开时渲染（组件本身无开关，由调用方决定）', () => {
+  // 传空 hints/common_mistakes 也不应崩
+  const bare = { ...exercise, hints: [], common_mistakes: [], explanation: '' };
+  const { lastFrame, unmount } = render(React.createElement(AnswerPanel, { exercise: bare }));
   const frame = lastFrame() ?? '';
-  assert.match(frame, /提示一/);
-  assert.match(frame, /提示三/);
+  unmount();
+  assert.match(frame, /参考答案/);
+  assert.ok(!frame.includes('解析'), '没有解析时不该显示空段落');
 });
 
 test('GradePanel: 正确时显示绿色对勾与得分', () => {
@@ -347,4 +360,37 @@ test('ReasoningPanel: 生成中标注状态', () => {
   const frame = lastFrame() ?? '';
   unmount();
   assert.match(frame, /生成中/);
+});
+
+/**
+ * 转录条目渲染：作答记录必须逐条保留。
+ * 实测踩到的坑：同一题答多次时，中间几次既没渲染也查不到 ——
+ * 因为当时只存「最后一次判题结果」，而且提交的答案从未展示过。
+ */
+test('GradePanel: 每次作答都能独立渲染出「答了什么」与「判成什么」', () => {
+  const attempts = [
+    { answer: 'chmod 664 f', grade: normalizeGrade({ verdict: 'partial', score: 60, reason: '缺少验证步骤' }) },
+    { answer: 'chmod 664 f && ls -l f', grade: normalizeGrade({ verdict: 'correct', score: 100, reason: '完整达成' }) },
+  ];
+  const { lastFrame, unmount } = render(
+    React.createElement(
+      Box,
+      null,
+      attempts.map((a, i) =>
+        React.createElement(
+          Box,
+          { key: i, flexDirection: 'column' },
+          React.createElement(Text, null, `你 ❯ ${a.answer}`),
+          React.createElement(GradePanel, { grade: a.grade }),
+        ),
+      ),
+    ),
+  );
+  const frame = lastFrame() ?? '';
+  unmount();
+  // 两次作答的内容都要在，不能只剩最后一次
+  assert.match(frame, /chmod 664 f/);
+  assert.match(frame, /chmod 664 f && ls -l f/);
+  assert.match(frame, /缺少验证步骤/);
+  assert.match(frame, /完整达成/);
 });
