@@ -1,0 +1,38 @@
+{
+  "name": "dojo",
+  "version": "0.2.0",
+  "description": "大模型出题、判题、答疑的 Linux 练习工具（TUI + 纯文本），无需真实环境",
+  "type": "module",
+  "bin": {
+    "dojo": "bin/dojo.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "demo": "tsx src/cli.ts --mock",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "tsx --test \"test/*.test.ts\" \"test/*.test.tsx\"",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "ink": "^8.0.0",
+    "react": "^19.3.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.3.0",
+    "ink-testing-library": "^4.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "5.9"
+  }
+}
