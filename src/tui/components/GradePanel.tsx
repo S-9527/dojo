@@ -15,24 +15,24 @@ export function GradePanel({ grade }: { grade: Grade }): React.JSX.Element {
             {style.icon} {style.label}
           </Text>
         </Text>
-        <Text color={theme.muted}>得分 {grade.score}/100</Text>
+        <Text color={theme.text.secondary}>得分 {grade.score}/100</Text>
       </Box>
 
       <Box marginTop={0} flexDirection="column">
-        <Text color={theme.text}>{grade.reason}</Text>
+        <Text color={theme.text.primary}>{grade.reason}</Text>
       </Box>
 
       {grade.corrected_answer ? (
         <Box marginTop={1} flexDirection="column">
-          <Text color={theme.dim}>参考写法</Text>
-          <Text color={theme.accent}>{`  ${grade.corrected_answer}`}</Text>
+          <Text color={theme.text.muted}>参考写法</Text>
+          <Text color={theme.text.accent}>{`  ${grade.corrected_answer}`}</Text>
         </Box>
       ) : null}
 
       {grade.knowledge_points.length ? (
         <Box marginTop={1}>
-          <Text color={theme.dim}>知识点 </Text>
-          <Text color={theme.muted}>{grade.knowledge_points.join(' · ')}</Text>
+          <Text color={theme.text.muted}>知识点 </Text>
+          <Text color={theme.text.secondary}>{grade.knowledge_points.join(' · ')}</Text>
         </Box>
       ) : null}
     </Box>
@@ -42,11 +42,11 @@ export function GradePanel({ grade }: { grade: Grade }): React.JSX.Element {
 /** 提示气泡。 */
 export function HintPanel({ text, level, total }: { text: string; level: number; total: number }): React.JSX.Element {
   return (
-    <Box marginTop={1} borderStyle="round" borderColor={theme.warn} paddingX={1} flexDirection="column">
-      <Text color={theme.warn} bold>
+    <Box marginTop={1} borderStyle="round" borderColor={theme.status.warning} paddingX={1} flexDirection="column">
+      <Text color={theme.status.warning} bold>
         提示 {level}/{total}
       </Text>
-      <Text color={theme.text}>{text}</Text>
+      <Text color={theme.text.primary}>{text}</Text>
     </Box>
   );
 }
@@ -54,11 +54,11 @@ export function HintPanel({ text, level, total }: { text: string; level: number;
 /** 错误展示。 */
 export function ErrorPanel({ message }: { message: string }): React.JSX.Element {
   return (
-    <Box marginTop={1} borderStyle="round" borderColor={theme.danger} paddingX={1} flexDirection="column">
-      <Text color={theme.danger} bold>
+    <Box marginTop={1} borderStyle="round" borderColor={theme.status.error} paddingX={1} flexDirection="column">
+      <Text color={theme.status.error} bold>
         ✗ 出错了
       </Text>
-      <Text color={theme.muted}>{message}</Text>
+      <Text color={theme.text.secondary}>{message}</Text>
     </Box>
   );
 }

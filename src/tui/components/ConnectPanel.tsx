@@ -57,7 +57,7 @@ function StepBar({ step }: { step: ConnectStep }): React.JSX.Element {
       {STEP_ORDER.map((s, i) => {
         const done = i < currentIndex;
         const active = i === currentIndex;
-        const color = done ? theme.correct : active ? theme.brand : theme.dim;
+        const color = done ? theme.status.success : active ? theme.text.brand : theme.text.muted;
         return (
           <Box key={s} marginRight={2}>
             <Text color={color}>
@@ -135,12 +135,12 @@ export function ConnectPanel({
   );
 
   return (
-    <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor={theme.accent} paddingX={1}>
+    <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor={theme.text.accent} paddingX={1}>
       <Box justifyContent="space-between">
-        <Text color={theme.text} bold>
+        <Text color={theme.text.primary} bold>
           连接大模型
         </Text>
-        <Text color={theme.dim}>Esc 取消</Text>
+        <Text color={theme.text.muted}>Esc 取消</Text>
       </Box>
 
       <Box marginTop={0}>
@@ -190,7 +190,7 @@ export function ConnectPanel({
 
       {step === 'testing' ? (
         <Box flexDirection="column" marginTop={1}>
-          <Text color={theme.accent}>正在测试连接…</Text>
+          <Text color={theme.text.accent}>正在测试连接…</Text>
         </Box>
       ) : null}
 
@@ -199,7 +199,7 @@ export function ConnectPanel({
           <Summary draft={draft} config={config} />
           {probe ? (
             <Box flexDirection="column" marginTop={1}>
-              <Text color={probe.ok ? theme.correct : theme.danger}>
+              <Text color={probe.ok ? theme.status.success : theme.status.error}>
                 {probe.ok ? '✓ ' : '✗ '}
                 {describeProbe(probe)}
               </Text>
@@ -207,11 +207,11 @@ export function ConnectPanel({
           ) : null}
           {error ? (
             <Box marginTop={1}>
-              <Text color={theme.danger}>{error}</Text>
+              <Text color={theme.status.error}>{error}</Text>
             </Box>
           ) : null}
           <Box marginTop={1}>
-            <Text color={theme.dim}>
+            <Text color={theme.text.muted}>
               {probe?.ok
                 ? 'Enter 保存并应用 · T 重新测试 · Esc 取消'
                 : 'T 重新测试 · S 仍然保存 · Esc 取消'}
@@ -222,7 +222,7 @@ export function ConnectPanel({
 
       {error && step !== 'done' ? (
         <Box marginTop={1}>
-          <Text color={theme.danger}>{error}</Text>
+          <Text color={theme.status.error}>{error}</Text>
         </Box>
       ) : null}
     </Box>
@@ -246,19 +246,19 @@ function ProviderStep({ providerIndex }: { providerIndex: number }): React.JSX.E
 
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Text color={theme.dim}>选择服务商（↑↓ 选择，Enter 确认）</Text>
+      <Text color={theme.text.muted}>选择服务商（↑↓ 选择，Enter 确认）</Text>
       {items.map((item, i) => {
         const selected = i === providerIndex;
         return (
           <Box key={item.id} justifyContent="space-between">
             <Text>
-              <Text color={selected ? theme.brand : theme.dim}>{selected ? '❯ ' : '  '}</Text>
-              <Text color={selected ? theme.brand : theme.text} bold={selected}>
+              <Text color={selected ? theme.text.brand : theme.text.muted}>{selected ? '❯ ' : '  '}</Text>
+              <Text color={selected ? theme.text.brand : theme.text.primary} bold={selected}>
                 {item.name}
               </Text>
-              {item.needsKey ? null : <Text color={theme.dim}>{'  （无需 Key）'}</Text>}
+              {item.needsKey ? null : <Text color={theme.text.muted}>{'  （无需 Key）'}</Text>}
             </Text>
-            <Text color={theme.dim}>{item.note}</Text>
+            <Text color={theme.text.muted}>{item.note}</Text>
           </Box>
         );
       })}
@@ -289,13 +289,13 @@ function FieldStep({
 }): React.JSX.Element {
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Text color={theme.text} bold>
+      <Text color={theme.text.primary} bold>
         {title}
       </Text>
-      <Text color={theme.dim}>{hint}</Text>
+      <Text color={theme.text.muted}>{hint}</Text>
       <Box marginTop={0}>
-        <Text color={theme.dim}>当前 </Text>
-        <Text color={theme.muted}>{current || '（空）'}</Text>
+        <Text color={theme.text.muted}>当前 </Text>
+        <Text color={theme.text.secondary}>{current || '（空）'}</Text>
       </Box>
       <Box marginTop={1}>
         <InputBar
@@ -308,7 +308,7 @@ function FieldStep({
         />
       </Box>
       <Box>
-        <Text color={theme.dim}>留空回车 = 保持当前值</Text>
+        <Text color={theme.text.muted}>留空回车 = 保持当前值</Text>
       </Box>
     </Box>
   );
@@ -333,21 +333,21 @@ function KeyStep({
 }): React.JSX.Element {
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Text color={theme.text} bold>
+      <Text color={theme.text.primary} bold>
         API Key
       </Text>
-      <Text color={theme.dim}>粘贴后回车。留空回车表示沿用当前 Key。</Text>
+      <Text color={theme.text.muted}>粘贴后回车。留空回车表示沿用当前 Key。</Text>
       {hasExisting ? (
         <Box>
-          <Text color={theme.dim}>当前 </Text>
-          <Text color={theme.muted}>{masked}</Text>
+          <Text color={theme.text.muted}>当前 </Text>
+          <Text color={theme.text.secondary}>{masked}</Text>
         </Box>
       ) : null}
       <Box marginTop={1}>
         <MaskedInput value={input} onChange={setInput} onSubmit={onSubmit} onEscape={onEscape} />
       </Box>
       <Box marginTop={1}>
-        <Text color={theme.dim}>
+        <Text color={theme.text.muted}>
           Key 会写入 {configPath()}（权限 0600）。用环境变量 DOJO_API_KEY 则不会落盘。
         </Text>
       </Box>
@@ -380,7 +380,7 @@ function MaskedInput({
         active
       />
       <Box>
-        <Text color={theme.dim}>{`  显示为 ${visible || '（空）'}`}</Text>
+        <Text color={theme.text.muted}>{`  显示为 ${visible || '（空）'}`}</Text>
       </Box>
     </Box>
   );
@@ -398,9 +398,9 @@ function Summary({ draft, config }: { draft: ConnectionDraft; config: ResolvedCo
       {rows.map(([key, value]) => (
         <Box key={key}>
           <Box width={6} flexShrink={0}>
-            <Text color={theme.dim}>{key}</Text>
+            <Text color={theme.text.muted}>{key}</Text>
           </Box>
-          <Text color={theme.text}>{value}</Text>
+          <Text color={theme.text.primary}>{value}</Text>
         </Box>
       ))}
     </Box>

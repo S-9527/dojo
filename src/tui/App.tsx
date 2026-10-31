@@ -665,7 +665,7 @@ export function App({
           {error ? <ErrorPanel message={error} /> : null}
           {notice ? (
             <Box marginTop={1}>
-              <Text color={theme.dim}>{notice}</Text>
+              <Text color={theme.text.muted}>{notice}</Text>
             </Box>
           ) : null}
           {phase === 'grading' || (lastRun?.kind === 'grade' && grade) ? (
@@ -699,7 +699,7 @@ export function App({
               <Box marginTop={1}>
                 {/* 只在「刚判完题」这种需要指引下一步的时候提示；
                     通用按键交给底部的模式栏，避免两行重复 */}
-                <Text color={theme.dim}>
+                <Text color={theme.text.muted}>
                   {phase === 'graded' ? '按 n 换下一题 · a 看答案 · h 要提示' : ' '}
                 </Text>
               </Box>
@@ -749,7 +749,7 @@ export function App({
               active={mode === 'insert' && !busy}
             />
             <Box marginTop={1}>
-              <Text color={theme.dim}>回车发送 · 回答不会直接给出当前题答案</Text>
+              <Text color={theme.text.muted}>回车发送 · 回答不会直接给出当前题答案</Text>
             </Box>
           </Box>
         </Box>

@@ -87,25 +87,36 @@ export function InputBar({
   const after = value.slice(cursor + 1);
 
   return (
-    <Box>
-      <Text color={active ? theme.brand : theme.dim} bold>
-        {`  ${prompt}`}
-      </Text>
-      {!active ? (
-        // 命令模式下不显示光标，明确「现在打字不会进去」
-        <Text color={theme.dim}>{value || placeholder}</Text>
-      ) : value.length === 0 ? (
-        <Text>
-          <Text inverse>{placeholder.slice(0, 1) || ' '}</Text>
-          <Text color={theme.dim}>{placeholder.slice(1)}</Text>
+    <Box flexDirection="column">
+      {/* 圆角顶边：把输入区从上方内容里切出来，形成「在这里打字」的视觉锚点 */}
+      <Box
+        borderStyle="round"
+        borderColor={active ? theme.border.focus : theme.border.default}
+        borderBottom={false}
+        borderLeft={false}
+        borderRight={false}
+        height={0}
+      />
+      <Box paddingX={1}>
+        <Text color={active ? theme.text.accent : theme.text.muted} bold>
+          {prompt}
         </Text>
-      ) : (
-        <Text>
-          <Text color={theme.text}>{before}</Text>
-          <Text inverse>{atCursor || ' '}</Text>
-          <Text color={theme.text}>{after}</Text>
-        </Text>
-      )}
+        {!active ? (
+          // 命令模式下不显示光标，明确「现在打字不会进去」
+          <Text color={theme.text.muted}>{value || placeholder}</Text>
+        ) : value.length === 0 ? (
+          <Text>
+            <Text inverse>{placeholder.slice(0, 1) || ' '}</Text>
+            <Text color={theme.text.muted}>{placeholder.slice(1)}</Text>
+          </Text>
+        ) : (
+          <Text>
+            <Text color={theme.text.primary}>{before}</Text>
+            <Text inverse>{atCursor || ' '}</Text>
+            <Text color={theme.text.primary}>{after}</Text>
+          </Text>
+        )}
+      </Box>
     </Box>
   );
 }

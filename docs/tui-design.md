@@ -457,6 +457,62 @@ insert 模式：所有按键都是文本   ← InputBar 的 useInput（isActive 
 3. **模式必须始终可见**：底部常驻 `NORMAL` / `INSERT` 指示条，
    否则用户不知道按键会被怎么解释
 
+## 参考 Gemini CLI 的界面设计
+
+与 Claude Code 不同，**Gemini CLI 是 Apache-2.0 开源的**，可以直接读源码。
+本次配色与排版参考了 `packages/cli/src/ui/`：
+
+### 1. 语义化颜色 token
+
+它不按「红/绿/蓝」命名颜色，而按**用途**命名：
+
+```ts
+export interface SemanticColors {
+  text:      { primary, secondary, link, accent, response };
+  background:{ primary, message, input, focus, diff: {added, removed} };
+  border:    { default };
+  ui:        { comment, symbol, active, dark, focus, gradient };
+  status:    { error, success, warning };
+}
+```
+
+好处是换主题只改一处，组件里不出现硬编码色值。本项目照此重构了 `theme.ts`，
+组件一律用 `theme.text.secondary`、`theme.status.error` 这种语义键。
+
+### 2. 用 256 色近似值，而不是 truecolor
+
+它的深色主题色值是 `#AFAFAF`（灰）、`#87AFFF`（蓝）、`#D7AFFF`（紫）、
+`#87D7D7`（青）、`#FFFFAF`（黄）、`#FF87AF`（红）—— 这些是 xterm-256 色立方
+的标准取值，不是随手挑的 truecolor。
+
+这么做是为了兼容性：只支持 256 色的终端里，truecolor 色值会被近似成难看的结果。
+本项目原先用的是 GitHub 风格的 truecolor（`#7ee787` 等），已改为同一套取值。
+
+### 3. 圆角边框框住内容块
+
+`borderStyle="round"` 是它的主导样式，用于 Banner、对话框、输入区。
+本项目据此把题目卡片改成圆角边框，输入区加上圆角顶边。
+
+### 4. 标签列 + 内容列两栏排版
+
+这是让中文排版对齐的关键。直接写 `场景  <长文本>` 时，
+换行后的第二行会顶到最左边；而嵌套一层定宽 Box 后，
+内容列自己负责折行，续行自然与文字左边缘对齐：
+
+```tsx
+<Box>
+  <Box width={7} flexShrink={0}><Text>验收点</Text></Box>
+  <Box flexGrow={1}><Text>{content}</Text></Box>
+</Box>
+```
+
+注意宽度要按**显示列**算：`验收点` 是 3 个汉字 = 6 列，
+设为 6 会导致「验收点1.」粘在一起，需要留出间隔。
+
+### 5. 底部状态行的组织
+
+项目之间用暗色的 ` · ` 分隔，次要信息用灰色，需要强调的才上色。
+
 ## 参考 Claude Code 的观察
 
 Claude Code **没有公开源码**：`anthropics/claude-code` 仓库只有文档/示例/插件，

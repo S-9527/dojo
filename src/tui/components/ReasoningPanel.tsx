@@ -38,7 +38,7 @@ export function ReasoningPanel({
 
   return (
     <Box flexDirection="column" marginTop={1} paddingLeft={2}>
-      <Text color={theme.dim}>
+      <Text color={theme.text.muted}>
         {expanded
           ? `▾ 思考过程${generating ? '（生成中…）' : '（已完成）'}  zc 收起`
           : `▸ 思考过程${generating ? '，生成中…' : ''}  zo 展开`}
@@ -52,7 +52,7 @@ export function ReasoningPanel({
             width={Math.max(16, width - 12)}
             state={view}
           />
-          <Text color={theme.dim}>{'↑↓ 逐行 · u/d 翻页 · g 顶部 · G 最新 · zo/zc 展开收起'}</Text>
+          <Text color={theme.text.muted}>{'↑↓ 逐行 · u/d 翻页 · g 顶部 · G 最新 · zo/zc 展开收起'}</Text>
         </Box>
       ) : null}
     </Box>

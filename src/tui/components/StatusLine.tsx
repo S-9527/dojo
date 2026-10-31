@@ -69,17 +69,17 @@ export function StatusLine({
     const elapsedText = formatElapsed(elapsed);
     return (
       <Box marginTop={1}>
-        {elapsedText ? <Text color={theme.dim}>{`${elapsedText}  `}</Text> : <Text color={theme.dim}>{'  '}</Text>}
-        <Text color={theme.accent}>{frames[frame]} </Text>
-        <Text color={theme.muted}>{busyText}</Text>
-        {tokens > 0 ? <Text color={theme.dim}>{`  ${formatCount(tokens)} tokens`}</Text> : null}
+        {elapsedText ? <Text color={theme.text.muted}>{`${elapsedText}  `}</Text> : <Text color={theme.text.muted}>{'  '}</Text>}
+        <Text color={theme.text.accent}>{frames[frame]} </Text>
+        <Text color={theme.text.secondary}>{busyText}</Text>
+        {tokens > 0 ? <Text color={theme.text.muted}>{`  ${formatCount(tokens)} tokens`}</Text> : null}
         {interruptHint ? (
           <Text>
-            <Text color={theme.dim}>{'  '}</Text>
-            <Text color={theme.dim} bold>
+            <Text color={theme.text.muted}>{'  '}</Text>
+            <Text color={theme.text.muted} bold>
               {'esc '}
             </Text>
-            <Text color={theme.dim}>中断</Text>
+            <Text color={theme.text.muted}>中断</Text>
           </Text>
         ) : null}
       </Box>
@@ -87,15 +87,15 @@ export function StatusLine({
   }
 
   const icon = aborted ? '⏹ ' : failed ? '✗ ' : '✓ ';
-  const iconColor = aborted ? theme.warn : failed ? theme.danger : theme.correct;
+  const iconColor = aborted ? theme.status.warning : failed ? theme.status.error : theme.status.success;
   const elapsedText = elapsedMs !== undefined ? formatElapsed(elapsedMs) || '<1s' : '';
 
   return (
     <Box marginTop={1}>
       <Text color={iconColor}>{icon}</Text>
-      <Text color={theme.dim}>{doneText ?? '完成'}</Text>
-      {elapsedText ? <Text color={theme.dim}>{`  ${elapsedText}`}</Text> : null}
-      {meta ? <Text color={theme.dim}>{`  ${meta}`}</Text> : null}
+      <Text color={theme.text.muted}>{doneText ?? '完成'}</Text>
+      {elapsedText ? <Text color={theme.text.muted}>{`  ${elapsedText}`}</Text> : null}
+      {meta ? <Text color={theme.text.muted}>{`  ${meta}`}</Text> : null}
     </Box>
   );
 }

@@ -29,7 +29,7 @@ export function ScrollBox({
   width,
   state,
   title,
-  color = theme.dim,
+  color = theme.text.muted,
 }: {
   text: string;
   height: number;
@@ -46,8 +46,8 @@ export function ScrollBox({
     <Box flexDirection="column">
       {title ? (
         <Box justifyContent="space-between">
-          <Text color={theme.dim}>{title}</Text>
-          <Text color={theme.dim}>
+          <Text color={theme.text.muted}>{title}</Text>
+          <Text color={theme.text.muted}>
             {win.hiddenAbove > 0 ? `↑ ${win.hiddenAbove} 行` : ''}
             {win.hiddenAbove > 0 && win.hiddenBelow > 0 ? ' · ' : ''}
             {win.hiddenBelow > 0 ? `↓ ${win.hiddenBelow} 行` : ''}

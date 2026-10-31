@@ -11,7 +11,7 @@ import { INSERT_KEYS, NORMAL_KEYS, insertHint, normalHint, type Mode } from '../
  */
 export function ModeBar({ mode, notice }: { mode: Mode; notice?: string }): React.JSX.Element {
   const isNormal = mode === 'normal';
-  const color = isNormal ? theme.accent : theme.brand;
+  const color = isNormal ? theme.text.accent : theme.text.brand;
 
   return (
     <Box justifyContent="space-between">
@@ -19,9 +19,9 @@ export function ModeBar({ mode, notice }: { mode: Mode; notice?: string }): Reac
         <Text color={color} bold>
           {` ${isNormal ? 'NORMAL' : 'INSERT'} `}
         </Text>
-        <Text color={theme.dim}>{`  ${isNormal ? normalHint(NORMAL_KEYS) : insertHint()}`}</Text>
+        <Text color={theme.text.muted}>{`  ${isNormal ? normalHint(NORMAL_KEYS) : insertHint()}`}</Text>
       </Text>
-      {notice ? <Text color={theme.warn}>{notice}</Text> : null}
+      {notice ? <Text color={theme.status.warning}>{notice}</Text> : null}
     </Box>
   );
 }
@@ -30,22 +30,22 @@ export function ModeBar({ mode, notice }: { mode: Mode; notice?: string }): Reac
 export function KeyHelp({ mode }: { mode: Mode }): React.JSX.Element {
   const keys = mode === 'normal' ? NORMAL_KEYS : INSERT_KEYS;
   return (
-    <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor={theme.border} paddingX={1}>
-      <Text color={theme.text} bold>
+    <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor={theme.border.default} paddingX={1}>
+      <Text color={theme.text.primary} bold>
         {mode === 'normal' ? '命令模式按键' : '输入模式按键'}
       </Text>
       <Box flexDirection="column">
         {keys.map((k) => (
           <Box key={k.keys}>
             <Box width={10} flexShrink={0}>
-              <Text color={theme.accent}>{k.keys}</Text>
+              <Text color={theme.text.accent}>{k.keys}</Text>
             </Box>
-            <Text color={theme.muted}>{k.detail}</Text>
+            <Text color={theme.text.secondary}>{k.detail}</Text>
           </Box>
         ))}
       </Box>
       <Box marginTop={1}>
-        <Text color={theme.dim}>
+        <Text color={theme.text.muted}>
           {mode === 'normal' ? 'i 进入输入模式 · Esc 中断请求' : 'Esc 回到命令模式'}
         </Text>
       </Box>

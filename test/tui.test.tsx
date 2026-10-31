@@ -49,7 +49,7 @@ test('ExerciseCard: 未揭晓时绝不泄露参考答案', () => {
 test('ExerciseCard: revealed 时展示答案与解析', () => {
   const { lastFrame } = render(React.createElement(ExerciseCard, { exercise, index: 1, revealed: true, showHints: false }));
   const frame = lastFrame() ?? '';
-  assert.match(frame, /参考答案/);
+  assert.match(frame, /答案/);
   assert.match(frame, /ls -S/);
   assert.match(frame, /按大小降序/);
 });

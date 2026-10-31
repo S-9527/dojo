@@ -25,12 +25,12 @@ export function CommandMenu({ items, activeIndex, input, argItems = [] }: Comman
 
   return (
     <Box flexDirection="column">
-      <Box flexDirection="column" borderStyle="round" borderColor={theme.border} paddingX={1}>
+      <Box flexDirection="column" borderStyle="round" borderColor={theme.border.default} paddingX={1}>
         {items.length === 0 ? (
           argItems.length > 0 ? (
-            <Text color={theme.dim}>选择参数值，或直接输入主题名</Text>
+            <Text color={theme.text.muted}>选择参数值，或直接输入主题名</Text>
           ) : (
-            <Text color={theme.dim}>
+            <Text color={theme.text.muted}>
               {'没有匹配的指令'}
               {namePart ? `（/${namePart}）` : ''}
             </Text>
@@ -41,13 +41,13 @@ export function CommandMenu({ items, activeIndex, input, argItems = [] }: Comman
             return (
               <Box key={item.name} justifyContent="space-between">
                 <Text>
-                  <Text color={selected ? theme.brand : theme.dim}>{selected ? '❯ ' : '  '}</Text>
-                  <Text color={selected ? theme.brand : theme.text} bold={selected}>
+                  <Text color={selected ? theme.text.brand : theme.text.muted}>{selected ? '❯ ' : '  '}</Text>
+                  <Text color={selected ? theme.text.brand : theme.text.primary} bold={selected}>
                     {highlight(item.name, namePart, selected)}
                   </Text>
-                  {item.takesArg ? <Text color={theme.dim}>{' <参数>'}</Text> : null}
+                  {item.takesArg ? <Text color={theme.text.muted}>{' <参数>'}</Text> : null}
                 </Text>
-                <Text color={selected ? theme.muted : theme.dim}>{item.summary}</Text>
+                <Text color={selected ? theme.text.secondary : theme.text.muted}>{item.summary}</Text>
               </Box>
             );
           })
@@ -57,13 +57,13 @@ export function CommandMenu({ items, activeIndex, input, argItems = [] }: Comman
       {active ? (
         <Box flexDirection="column" marginTop={1} paddingX={1}>
           <Text>
-            <Text color={theme.dim}>{'用法  '}</Text>
-            <Text color={theme.accent}>{active.usage}</Text>
+            <Text color={theme.text.muted}>{'用法  '}</Text>
+            <Text color={theme.text.accent}>{active.usage}</Text>
           </Text>
           <Box marginTop={0}>
-            <Text color={theme.dim}>{'说明  '}</Text>
+            <Text color={theme.text.muted}>{'说明  '}</Text>
             <Box flexDirection="column">
-              <Text color={theme.muted}>{active.detail}</Text>
+              <Text color={theme.text.secondary}>{active.detail}</Text>
             </Box>
           </Box>
         </Box>
@@ -71,19 +71,19 @@ export function CommandMenu({ items, activeIndex, input, argItems = [] }: Comman
 
       {argItems.length > 0 ? (
         <Box flexDirection="column" marginTop={1} paddingX={1}>
-          <Text color={theme.dim}>可选值（Tab 补全第一个）</Text>
+          <Text color={theme.text.muted}>可选值（Tab 补全第一个）</Text>
           {argItems.map((arg, i) => (
             <Box key={arg.value}>
-              <Text color={i === 0 ? theme.brand : theme.dim}>{i === 0 ? '❯ ' : '  '}</Text>
-              <Text color={i === 0 ? theme.brand : theme.muted}>{arg.value}</Text>
-              <Text color={theme.dim}>{`  ${arg.label}`}</Text>
+              <Text color={i === 0 ? theme.text.brand : theme.text.muted}>{i === 0 ? '❯ ' : '  '}</Text>
+              <Text color={i === 0 ? theme.text.brand : theme.text.secondary}>{arg.value}</Text>
+              <Text color={theme.text.muted}>{`  ${arg.label}`}</Text>
             </Box>
           ))}
         </Box>
       ) : null}
 
       <Box marginTop={1} paddingX={1}>
-        <Text color={theme.dim}>↑↓ 选择 · Tab / Enter 补全 · Esc 关闭 · 直接继续输入也行</Text>
+        <Text color={theme.text.muted}>↑↓ 选择 · Tab / Enter 补全 · Esc 关闭 · 直接继续输入也行</Text>
       </Box>
     </Box>
   );
@@ -98,10 +98,10 @@ function highlight(name: string, prefix: string, selected: boolean): React.JSX.E
   const tail = name.slice(prefix.length);
   return (
     <Text>
-      <Text color={selected ? theme.warn : theme.accent} bold>
+      <Text color={selected ? theme.status.warning : theme.text.accent} bold>
         {head}
       </Text>
-      <Text color={selected ? theme.brand : theme.text}>{tail}</Text>
+      <Text color={selected ? theme.text.brand : theme.text.primary}>{tail}</Text>
     </Text>
   );
 }

@@ -52,13 +52,13 @@ export function ChatPanel({
       {shown.map((turn, i) => (
         <Box key={i} flexDirection="column" marginTop={1}>
           <Box>
-            <Text color={theme.brand} bold>
+            <Text color={theme.text.brand} bold>
               {'你 ❯ '}
             </Text>
-            <Text color={theme.text}>{turn.q}</Text>
+            <Text color={theme.text.primary}>{turn.q}</Text>
           </Box>
           <Box marginTop={0}>
-            <Text color={theme.accent}>{'助教  '}</Text>
+            <Text color={theme.text.accent}>{'助教  '}</Text>
           </Box>
           <Box paddingLeft={2} flexDirection="column">
             <RichText text={turn.a} width={innerWidth} />
@@ -77,8 +77,8 @@ export function ChatPanel({
       {streaming ? (
         <Box flexDirection="column" marginTop={1}>
           <Box>
-            <Text color={theme.accent}>{'助教  '}</Text>
-            <Text color={theme.dim}>输出中…</Text>
+            <Text color={theme.text.accent}>{'助教  '}</Text>
+            <Text color={theme.text.muted}>输出中…</Text>
           </Box>
           <Box paddingLeft={2} flexDirection="column">
             <RichText text={streaming} width={innerWidth} />

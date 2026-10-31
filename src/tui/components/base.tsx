@@ -22,7 +22,7 @@ export function Frame({
     <Box flexDirection="column">
       <Box
         borderStyle="round"
-        borderColor={theme.border}
+        borderColor={theme.border.default}
         borderBottom={false}
         borderTop={false}
         borderLeft={false}
@@ -31,18 +31,18 @@ export function Frame({
         justifyContent="space-between"
       >
         <Text>
-          <Text color={theme.brand} bold>
+          <Text color={theme.text.brand} bold>
             ◆ dojo
           </Text>
         </Text>
-        <Text color={theme.muted}>{status}</Text>
+        <Text color={theme.text.secondary}>{status}</Text>
       </Box>
       <Box flexDirection="column" paddingX={1}>
         {children}
       </Box>
       <Box paddingX={1} flexDirection="column">
         {footer}
-        {footerSuffix ? <Text color={theme.dim}>{footerSuffix}</Text> : null}
+        {footerSuffix ? <Text color={theme.text.muted}>{footerSuffix}</Text> : null}
       </Box>
     </Box>
   );
@@ -52,7 +52,7 @@ export function Frame({
 export function Section({
   title,
   hint,
-  color = theme.accent,
+  color = theme.text.accent,
 }: {
   title: string;
   hint?: string;
@@ -62,11 +62,11 @@ export function Section({
     <Box marginTop={1} marginBottom={0} justifyContent="space-between">
       <Text>
         <Text color={color}>▌ </Text>
-        <Text color={theme.text} bold>
+        <Text color={theme.text.primary} bold>
           {title}
         </Text>
       </Text>
-      {hint ? <Text color={theme.dim}>{hint}</Text> : null}
+      {hint ? <Text color={theme.text.muted}>{hint}</Text> : null}
     </Box>
   );
 }
@@ -76,7 +76,7 @@ export function Field({
   label,
   value,
   labelWidth = 6,
-  color = theme.text,
+  color = theme.text.primary,
 }: {
   label: string;
   value: string;
@@ -86,7 +86,7 @@ export function Field({
   return (
     <Box>
       <Box width={labelWidth} flexShrink={0}>
-        <Text color={theme.dim}>{label}</Text>
+        <Text color={theme.text.muted}>{label}</Text>
       </Box>
       <Box flexDirection="column" flexGrow={1}>
         <Text color={color}>{value}</Text>
@@ -99,8 +99,8 @@ export function Field({
 export function CodeLine({ children, prefix = '│' }: { children: string; prefix?: string }): React.JSX.Element {
   return (
     <Box>
-      <Text color={theme.dim}>{prefix} </Text>
-      <Text color={theme.accent}>{children}</Text>
+      <Text color={theme.text.muted}>{prefix} </Text>
+      <Text color={theme.text.accent}>{children}</Text>
     </Box>
   );
 }
@@ -121,7 +121,7 @@ export function RichText({ text, width }: { text: string; width: number }): Reac
     blocks.push(
       <Box key={`b${key++}`} flexDirection="column">
         {wrapped.map((line, i) => (
-          <Text key={i} color={inCode ? theme.accent : theme.text}>
+          <Text key={i} color={inCode ? theme.text.accent : theme.text.primary}>
             {line || ' '}
           </Text>
         ))}
@@ -146,7 +146,7 @@ export function RichText({ text, width }: { text: string; width: number }): Reac
 export function Empty({ children }: { children: string }): React.JSX.Element {
   return (
     <Box marginTop={1}>
-      <Text color={theme.dim}>{children}</Text>
+      <Text color={theme.text.muted}>{children}</Text>
     </Box>
   );
 }
