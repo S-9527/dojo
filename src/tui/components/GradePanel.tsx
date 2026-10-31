@@ -63,20 +63,5 @@ export function ErrorPanel({ message }: { message: string }): React.JSX.Element 
   );
 }
 
-/** 加载中。 */
-export function Loading({ text }: { text: string }): React.JSX.Element {
-  const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-  const [frame, setFrame] = React.useState(0);
 
-  React.useEffect(() => {
-    const timer = setInterval(() => setFrame((f) => (f + 1) % frames.length), 80);
-    return () => clearInterval(timer);
-  }, []);
 
-  return (
-    <Box marginTop={1}>
-      <Text color={theme.accent}>{frames[frame]} </Text>
-      <Text color={theme.muted}>{text}</Text>
-    </Box>
-  );
-}

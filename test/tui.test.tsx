@@ -9,6 +9,7 @@ import { render } from 'ink-testing-library';
 import { ExerciseCard } from '../src/tui/components/ExerciseCard.tsx';
 import { GradePanel, HintPanel, ErrorPanel } from '../src/tui/components/GradePanel.tsx';
 import { StatsPanel } from '../src/tui/components/StatsPanel.tsx';
+import { StatusLine } from '../src/tui/components/StatusLine.tsx';
 import { ChatPanel } from '../src/tui/components/ChatPanel.tsx';
 import { bar } from '../src/tui/theme.ts';
 import { normalizeExercise, normalizeGrade } from '../src/schema.ts';
@@ -195,4 +196,68 @@ test('ChatPanel: 展开的思考区受视口高度限制，不会撑爆屏幕', 
   );
   const lines = (lastFrame() ?? '').split('\n');
   assert.ok(lines.length < 40, `渲染了 ${lines.length} 行，视口限高失效`);
+});
+
+/**
+ * 状态行：任务结束后必须保留摘要，而不是像 Loading 那样直接消失。
+ * 参考 opencode 的 Build 行（模型 · 耗时 · tok/s）。
+ */
+test('StatusLine: 进行中显示 spinner 与文案', () => {
+  // 必须 unmount：进行中的 spinner 用 setInterval 驱动，
+  // 不卸载会让定时器一直活着，node --test 跑完也退不出进程。
+  const { lastFrame, unmount } = render(
+    React.createElement(StatusLine, { busyText: '大模型正在出题' }),
+  );
+  try {
+    const frame = lastFrame() ?? '';
+    assert.match(frame, /大模型正在出题/);
+    assert.ok(!frame.includes('✓'), '进行中不应显示完成标记');
+  } finally {
+    unmount();
+  }
+});
+
+test('StatusLine: 完成后显示对勾、耗时与模型名', () => {
+  const { lastFrame, unmount } = render(
+    React.createElement(StatusLine, {
+      busyText: '大模型正在出题',
+      done: true,
+      doneText: '题目已生成',
+      elapsedMs: 1200,
+      meta: 'sensenova-6.8-flash-lite',
+    }),
+  );
+  const frame = lastFrame() ?? '';
+  unmount();
+  assert.match(frame, /✓/);
+  assert.match(frame, /题目已生成/);
+  assert.match(frame, /1\.2s/, '应显示耗时');
+  assert.match(frame, /sensenova/, '应显示模型名');
+  assert.ok(!frame.includes('正在出题'), '完成后不应再显示进行中文案');
+});
+
+test('StatusLine: 不足 0.1 秒不显示 0.0s', () => {
+  const { lastFrame, unmount } = render(
+    React.createElement(StatusLine, { busyText: '判题', done: true, doneText: '完成', elapsedMs: 30 }),
+  );
+  const frame = lastFrame() ?? '';
+  unmount();
+  assert.match(frame, /<0\.1s/);
+  assert.ok(!frame.includes('0.0s'), '0.0s 是无意义的信息');
+});
+
+test('StatusLine: 失败时用叉号与失败文案', () => {
+  const { lastFrame, unmount } = render(
+    React.createElement(StatusLine, {
+      busyText: '出题',
+      done: true,
+      doneText: '出题失败',
+      elapsedMs: 800,
+      failed: true,
+    }),
+  );
+  const frame = lastFrame() ?? '';
+  unmount();
+  assert.match(frame, /✗/);
+  assert.match(frame, /出题失败/);
 });

@@ -12,7 +12,8 @@ import { ExerciseCard } from './components/ExerciseCard.js';
 import { ChatPanel } from './components/ChatPanel.js';
 import { StatsPanel } from './components/StatsPanel.js';
 import { CommandMenu } from './components/CommandMenu.js';
-import { ErrorPanel, GradePanel, HintPanel, Loading } from './components/GradePanel.js';
+import { ErrorPanel, GradePanel, HintPanel } from './components/GradePanel.js';
+import { StatusLine } from './components/StatusLine.js';
 import { InputBar, type ShortcutKey } from './components/InputBar.js';
 import { theme } from './theme.js';
 import { scrollBy, wrapToLines, type ViewportState } from './scroll.js';
@@ -95,6 +96,16 @@ export function App({
 
 
   const [summary, setSummary] = React.useState<Summary>(() => summarize(progress.records));
+
+  /**
+   * 最近一次操作的完成态摘要。
+   * 任务结束后保留在屏幕上，避免 Loading 一消失就什么都不留。
+   */
+  const [lastRun, setLastRun] = React.useState<{
+    kind: 'exercise' | 'grade' | 'hint';
+    elapsedMs: number;
+    ok: boolean;
+  } | null>(null);
 
   // 斜杠候选菜单的状态
   const [menuIndex, setMenuIndex] = React.useState(0);
@@ -185,13 +196,16 @@ export function App({
       setRevealed(false);
       setShowAllHints(false);
       setAnswer('');
+      const startedAt = Date.now();
       try {
         const ex = await tutor.generateExercise({ topic: nextTopic, difficulty });
         setExercise(ex);
         setIndex((i) => i + 1);
         setPanel('practice');
+        setLastRun({ kind: 'exercise', elapsedMs: Date.now() - startedAt, ok: true });
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
+        setLastRun({ kind: 'exercise', elapsedMs: Date.now() - startedAt, ok: false });
       } finally {
         setPhase('awaiting');
       }
@@ -217,10 +231,12 @@ export function App({
       setPhase('grading');
       setError(null);
       setNotice('');
+      const startedAt = Date.now();
       try {
         const result = await tutor.grade(exercise, text);
         setGrade(result);
         setPhase('graded');
+        setLastRun({ kind: 'grade', elapsedMs: Date.now() - startedAt, ok: true });
         const updated = recordAttempt({
           title: exercise.title,
           topic: exercise.topic,
@@ -236,6 +252,7 @@ export function App({
         setAnswer('');
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
+        setLastRun({ kind: 'grade', elapsedMs: Date.now() - startedAt, ok: false });
         setPhase('awaiting');
       }
     },
@@ -620,7 +637,17 @@ export function App({
 
       {!connect.active && panel === 'practice' ? (
         <Box flexDirection="column">
-          {phase === 'loading' ? <Loading text="大模型正在出题…" /> : null}
+          {/* 出题状态：完成后保留一行摘要，而不是直接消失 */}
+          {phase === 'loading' || (lastRun?.kind === 'exercise' && !error) ? (
+            <StatusLine
+              busyText="大模型正在出题"
+              done={phase !== 'loading'}
+              doneText={lastRun?.ok ? '题目已生成' : '出题失败'}
+              elapsedMs={lastRun?.elapsedMs}
+              meta={config.mock ? 'Mock' : config.model}
+              failed={!lastRun?.ok}
+            />
+          ) : null}
 
           {exercise ? (
             <ExerciseCard exercise={exercise} index={index} revealed={revealed} showHints={showAllHints} />
@@ -634,8 +661,16 @@ export function App({
               <Text color={theme.dim}>{notice}</Text>
             </Box>
           ) : null}
-          {phase === 'grading' ? <Loading text="大模型正在判题…" /> : null}
-          {phase === 'hinting' ? <Loading text="正在生成提示…" /> : null}
+          {phase === 'grading' || (lastRun?.kind === 'grade' && grade) ? (
+            <StatusLine
+              busyText="大模型正在判题"
+              done={phase !== 'grading'}
+              doneText="判题完成"
+              elapsedMs={lastRun?.elapsedMs}
+              meta={config.mock ? 'Mock' : config.model}
+            />
+          ) : null}
+          {phase === 'hinting' ? <StatusLine busyText="正在生成提示" /> : null}
 
           {showHelp ? <HelpPanel onClose={() => setShowHelp(false)} /> : null}
 
@@ -676,7 +711,7 @@ export function App({
             width={width}
           />
           {error ? <ErrorPanel message={error} /> : null}
-          {phase === 'asking' && !streaming ? <Loading text="助教正在思考…" /> : null}
+          {phase === 'asking' && !streaming && !reasoning ? <StatusLine busyText="助教正在思考" /> : null}
 
           <Box marginTop={1} flexDirection="column">
             <InputBar
