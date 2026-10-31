@@ -36,6 +36,8 @@ export interface GenerateOptions {
   topic: TopicKey;
   difficulty: Difficulty;
   extraRequirement?: string;
+  /** 用于中断请求（Esc 取消） */
+  signal?: AbortSignal;
 }
 
 export interface AskOptions {
@@ -77,7 +79,7 @@ export class Tutor {
   }
 
   /** 出题。JSON 不合规时重试一次并降低温度提高稳定性。 */
-  async generateExercise({ topic, difficulty, extraRequirement = '' }: GenerateOptions): Promise<Exercise> {
+  async generateExercise({ topic, difficulty, extraRequirement = '', signal }: GenerateOptions): Promise<Exercise> {
     const { historyLines, avoidTitles } = this.contextFor(topic);
     const prompt = buildExercisePrompt({
       topicLabel: TOPICS[topic].label,
@@ -111,6 +113,7 @@ export class Tutor {
             temperature: attempt === 0 ? 0.85 : 0.4,
             jsonMode: true,
             maxTokens,
+            signal,
           },
         ),
       );
@@ -137,7 +140,7 @@ export class Tutor {
   }
 
   /** 判题。温度压到 0.1，尽量让同样的答案得到同样的判定。 */
-  async grade(exercise: Exercise, answer: string): Promise<Grade> {
+  async grade(exercise: Exercise, answer: string, options: { signal?: AbortSignal } = {}): Promise<Grade> {
     const raw = await this.callWithReasoningFallback(1500, (maxTokens) =>
       this.chatFn(
         this.config,
@@ -145,7 +148,7 @@ export class Tutor {
           { role: 'system', content: systemPrompt() },
           { role: 'user', content: buildGradePrompt(exercise, answer) },
         ],
-        { temperature: 0.1, jsonMode: true, maxTokens },
+        { temperature: 0.1, jsonMode: true, maxTokens, signal: options.signal },
       ),
     );
     const grade = normalizeGrade(parseJsonLoose(raw, '判题结果'));
@@ -176,14 +179,14 @@ export class Tutor {
   }
 
   /** 递进式提示：级别越高越接近答案。 */
-  async hint(exercise: Exercise, hintLevel: number): Promise<string> {
+  async hint(exercise: Exercise, hintLevel: number, options: { signal?: AbortSignal } = {}): Promise<string> {
     const raw = await this.chatFn(
       this.config,
       [
         { role: 'system', content: systemPrompt() },
         { role: 'user', content: buildHintPrompt(exercise, hintLevel) },
       ],
-      { temperature: 0.4, maxTokens: this.budget(800) },
+      { temperature: 0.4, maxTokens: this.budget(800), signal: options.signal },
     );
     return raw.trim();
   }
@@ -225,6 +228,8 @@ export class Tutor {
     try {
       return await run(this.budget(base));
     } catch (err) {
+      // 被用户中断时不重试：重试等于无视用户的取消意图
+      if (isAbortError(err)) throw err;
       if (!(err instanceof LlmError) || err.code !== 'reasoning-exhausted') throw err;
 
       // 记住：这个模型是推理模型，之后都按放大预算走。
@@ -246,6 +251,21 @@ export class Tutor {
       }
     }
   }
+}
+
+/**
+ * 判断是否为「用户取消」。
+ * 优先看错误码（可靠），其次看原生 AbortError，最后才退回文案匹配。
+ * 注意要和「超时」区分开：超时是可重试的失败，取消不是。
+ */
+export function isAbortError(err: unknown): boolean {
+  if (err instanceof LlmError) {
+    return err.code === 'aborted' || /已取消|abort/i.test(err.message);
+  }
+  if (err instanceof Error) {
+    return err.name === 'AbortError' || /已取消|abort/i.test(err.message);
+  }
+  return false;
 }
 
 /** 按配置组装 Tutor：mock 模式下换成离线实现，其余代码路径完全一致。 */

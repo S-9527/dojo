@@ -295,6 +295,63 @@ if (zPending && input === 'c')  { setShowReasoning(false); return true; }
 - 前缀超时清除（1.2s），否则按了 `z` 后走神，下次按键会被误判成 zo/zc
 - 前缀未命中时必须 `return false`，让字符正常进输入框（有测试锁定 `zebra` 能完整输入）
 
+### 9. 没有输入框的时刻，按键同样无人接收
+
+中断功能做好后实测「按 Esc 没反应」。原因是首次出题时 `exercise` 还是 `null`，
+而输入框是挂在 `{exercise ? ...}` 里的 —— **没有任何组件注册 `useInput`**。
+
+这和之前 `/connect` 向导的坑是同一个：Ink 的按键只在有 `useInput` 时才被消费。
+
+修法是加一个兜底处理器，在没有输入框时接管：
+
+```tsx
+const inputBarVisible = connect.active
+  ? connect.step === 'baseUrl' || connect.step === 'apiKey' || connect.step === 'model'
+  : panel === 'chat' || panel === 'stats' || Boolean(exercise);
+
+useInput((input, key) => handleShortcut(input, toShortcutKey(key)), {
+  isActive: !inputBarVisible,   // 只在没有输入框时生效，避免和 InputBar 抢按键
+});
+```
+
+判断条件必须和渲染条件**严格互补**，否则要么两处都处理（按键执行两次），
+要么两处都不处理（按键丢失）。
+
+### 10. 已取消的 AbortSignal 不会触发 abort 事件
+
+```js
+outerSignal?.addEventListener('abort', onAbort, { once: true });
+```
+
+如果 signal 在**注册监听之前就已中断**，这个监听器永远不会触发，
+请求照样发出去 —— 用户按了 Esc 却还在干等。
+
+必须先看状态：
+
+```js
+if (outerSignal?.aborted) throw new LlmError('请求已取消', { code: 'aborted' });
+```
+
+### 11. Node fetch 中断时抛的不是 AbortError
+
+```js
+// 错的：Node 抛出的是 abort reason 本身（我们传的 Error('cancelled')），
+// name 仍然是 'Error'，这个判断不成立
+if (err instanceof Error && err.name === 'AbortError') { ... }
+```
+
+可靠的做法是查 signal 状态：
+
+```js
+if (controller.signal.aborted) {
+  const timedOut = controller.signal.reason?.message === 'timeout';
+  throw timedOut ? new LlmError('请求超时') : new LlmError('请求已取消', { code: 'aborted' });
+}
+```
+
+**超时与取消必须分开**：超时可重试，取消不可重试。否则用户按了 Esc，
+重试逻辑会把请求又发一遍。
+
 ## 非 TTY 回退
 
 `stdout` 不是 TTY（管道、CI、`| less`）时 Ink 会报错，自动降级到 `src/plain.ts` 的纯文本界面。

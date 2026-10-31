@@ -1,7 +1,7 @@
 import React from 'react';
-import { Box, Text, useApp, useStdout } from 'ink';
+import { Box, Text, useApp, useInput, useStdout } from 'ink';
 import type { AskTurn, Exercise, Grade, Progress, ResolvedConfig, Summary, TopicKey } from '../types.js';
-import { createTutor, type Tutor } from '../tutor.js';
+import { createTutor, isAbortError, type Tutor } from '../tutor.js';
 import { useConnect } from './useConnect.js';
 import { ConnectPanel } from './components/ConnectPanel.js';
 import { DIFFICULTIES, TOPICS, TOPIC_KEYS, resolveTopic } from '../topics.js';
@@ -101,10 +101,49 @@ export function App({
    * 最近一次操作的完成态摘要。
    * 任务结束后保留在屏幕上，避免 Loading 一消失就什么都不留。
    */
+  /**
+   * 正在进行的请求的中断控制器。
+   * 用 ref 而不是 state：中断需要立刻生效，不该等一次重渲染。
+   */
+  const abortRef = React.useRef<AbortController | null>(null);
+
+  /** 发起请求前登记控制器；结束后清掉，避免误中断后续请求。 */
+  const startAbortable = React.useCallback((): AbortSignal => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    return controller.signal;
+  }, []);
+
+  const finishAbortable = React.useCallback(() => {
+    abortRef.current = null;
+  }, []);
+
+  /**
+   * 请求失败的统一处理。
+   * 中断是用户主动行为，不该显示成红色报错，只留一行状态说明。
+   */
+  const handleRequestError = React.useCallback(
+    (err: unknown, startedAt: number, kind: 'exercise' | 'grade') => {
+      const elapsedMs = Date.now() - startedAt;
+      if (isAbortError(err)) {
+        setNotice('已中断');
+        setLastRun({ kind, elapsedMs, ok: false, aborted: true });
+        setError(null);
+        return;
+      }
+      setError(err instanceof Error ? err.message : String(err));
+      setLastRun({ kind, elapsedMs, ok: false });
+    },
+    [],
+  );
+
   const [lastRun, setLastRun] = React.useState<{
     kind: 'exercise' | 'grade' | 'hint';
     elapsedMs: number;
     ok: boolean;
+    /** 被用户中断（不是失败，显示上要区分） */
+    aborted?: boolean;
   } | null>(null);
 
   // 斜杠候选菜单的状态
@@ -197,16 +236,17 @@ export function App({
       setShowAllHints(false);
       setAnswer('');
       const startedAt = Date.now();
+      const signal = startAbortable();
       try {
-        const ex = await tutor.generateExercise({ topic: nextTopic, difficulty });
+        const ex = await tutor.generateExercise({ topic: nextTopic, difficulty, signal });
         setExercise(ex);
         setIndex((i) => i + 1);
         setPanel('practice');
         setLastRun({ kind: 'exercise', elapsedMs: Date.now() - startedAt, ok: true });
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-        setLastRun({ kind: 'exercise', elapsedMs: Date.now() - startedAt, ok: false });
+        handleRequestError(err, startedAt, 'exercise');
       } finally {
+        finishAbortable();
         setPhase('awaiting');
       }
     },
@@ -232,8 +272,9 @@ export function App({
       setError(null);
       setNotice('');
       const startedAt = Date.now();
+      const signal = startAbortable();
       try {
-        const result = await tutor.grade(exercise, text);
+        const result = await tutor.grade(exercise, text, { signal });
         setGrade(result);
         setPhase('graded');
         setLastRun({ kind: 'grade', elapsedMs: Date.now() - startedAt, ok: true });
@@ -251,12 +292,12 @@ export function App({
         setSummary(summarize(updated.records));
         setAnswer('');
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-        setLastRun({ kind: 'grade', elapsedMs: Date.now() - startedAt, ok: false });
-        setPhase('awaiting');
+        handleRequestError(err, startedAt, 'grade');
+      } finally {
+        finishAbortable();
       }
     },
-    [tutor, exercise, progress],
+    [tutor, exercise, progress, startAbortable, finishAbortable, handleRequestError],
   );
 
   const requestHint = React.useCallback(async () => {
@@ -270,7 +311,7 @@ export function App({
     setPhase('hinting');
     setError(null);
     try {
-      const text = await tutor.hint(exercise, level);
+      const text = await tutor.hint(exercise, level, { signal: startAbortable() });
       setHint({ text, level: level + 1 });
       setPhase('graded');
     } catch (err) {
@@ -576,6 +617,12 @@ export function App({
         }
       }
       if (key.escape) {
+        // 正在请求时，Esc 优先用于中断 —— 这是最需要它的时刻
+        if (busy && abortRef.current) {
+          abortRef.current.abort();
+          setNotice('已中断');
+          return true;
+        }
         if (showHelp) {
           setShowHelp(false);
           return true;
@@ -593,9 +640,36 @@ export function App({
       return false;
     },
     [
-      panel, phase, topic, nextExercise, requestHint, runReview, exit,
+      panel, phase, topic, nextExercise, requestHint, runReview, exit, busy,
       menuOpen, menuItems, menuIndex, showHelp, setInput, connect, inArgPhase, argItems,
     ],
+  );
+
+  /**
+   * 输入框是否已渲染。
+   * 按键处理挂在 InputBar 的 onShortcut 上，所以「没有输入框」的时刻
+   * （例如首次出题、exercise 还是 null）就完全没有组件接收按键，
+   * 导致 Esc 无法中断。这里用一个兜底 useInput 补上。
+   */
+  const inputBarVisible = connect.active
+    ? connect.step === 'baseUrl' || connect.step === 'apiKey' || connect.step === 'model'
+    : panel === 'chat' || panel === 'stats' || Boolean(exercise);
+
+  useInput(
+    (input, key) => {
+      handleShortcut(input, {
+        ctrl: key.ctrl,
+        meta: key.meta,
+        tab: key.tab,
+        return: key.return,
+        escape: key.escape,
+        backspace: key.backspace,
+        delete: key.delete,
+        upArrow: key.upArrow,
+        downArrow: key.downArrow,
+      });
+    },
+    { isActive: !inputBarVisible },
   );
 
   const footer = connect.active
@@ -642,10 +716,11 @@ export function App({
             <StatusLine
               busyText="大模型正在出题"
               done={phase !== 'loading'}
-              doneText={lastRun?.ok ? '题目已生成' : '出题失败'}
+              doneText={lastRun?.aborted ? '已中断' : lastRun?.ok ? '题目已生成' : '出题失败'}
               elapsedMs={lastRun?.elapsedMs}
               meta={config.mock ? 'Mock' : config.model}
-              failed={!lastRun?.ok}
+              failed={!lastRun?.ok && !lastRun?.aborted}
+              aborted={lastRun?.aborted}
             />
           ) : null}
 
@@ -665,9 +740,10 @@ export function App({
             <StatusLine
               busyText="大模型正在判题"
               done={phase !== 'grading'}
-              doneText="判题完成"
+              doneText={lastRun?.aborted ? '已中断' : '判题完成'}
               elapsedMs={lastRun?.elapsedMs}
               meta={config.mock ? 'Mock' : config.model}
+              aborted={lastRun?.aborted}
             />
           ) : null}
           {phase === 'hinting' ? <StatusLine busyText="正在生成提示" /> : null}

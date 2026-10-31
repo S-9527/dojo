@@ -6,7 +6,7 @@
 import { extractContent, extractReasoning, looksLikeErrorPayload, summarizePayload } from './extract.js';
 import type { ChatMessage, ChatOptions, ResolvedConfig, StreamOptions } from './types.js';
 
-export type LlmErrorCode = 'reasoning-exhausted';
+export type LlmErrorCode = 'reasoning-exhausted' | 'aborted';
 
 export class LlmError extends Error {
   readonly status?: number;
@@ -82,9 +82,16 @@ async function requestOnce(config: ResolvedConfig, body: ChatRequestBody, outerS
     throw new LlmError('缺少 API Key。请设置环境变量 DOJO_API_KEY，或运行 `dojo config` 查看配置方法');
   }
 
+  // 已经取消的 signal 必须立刻返回。
+  // 只监听 abort 事件是不够的：如果 signal 在发起前就已中断，
+  // 监听器永远不会触发，请求照样发出去，用户按了 Esc 却还在干等。
+  if (outerSignal?.aborted) {
+    throw new LlmError('请求已取消', { code: 'aborted' });
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error('timeout')), config.timeoutMs || 90_000);
-  const onAbort = () => controller.abort(outerSignal?.reason);
+  const onAbort = () => controller.abort(new Error('cancelled'));
   outerSignal?.addEventListener('abort', onAbort, { once: true });
 
   let response: Response;
@@ -99,10 +106,16 @@ async function requestOnce(config: ResolvedConfig, body: ChatRequestBody, outerS
       signal: controller.signal,
     });
   } catch (err) {
-    if (err instanceof Error && err.name === 'AbortError') {
+    // 不能用 err.name === 'AbortError' 判断：Node 的 fetch 在被中断时
+    // 抛出的往往是 abort reason 本身（我们传的是 Error('cancelled')），
+    // name 仍是 'Error'。直接看 signal 状态最可靠。
+    if (controller.signal.aborted) {
       const reason = controller.signal.reason;
       const timedOut = reason instanceof Error && reason.message === 'timeout';
-      throw new LlmError(timedOut ? `请求超时（${config.timeoutMs}ms）` : '请求已取消');
+      // 区分「超时」与「用户取消」：前者可重试，后者不该重试
+      throw timedOut
+        ? new LlmError(`请求超时（${config.timeoutMs}ms）`)
+        : new LlmError('请求已取消', { code: 'aborted' });
     }
     const detail = err instanceof Error ? err.message : String(err);
     throw new LlmError(
@@ -242,7 +255,9 @@ export async function chatStream(
     }
     return full;
   } catch (err) {
-    if (err instanceof Error && err.name === 'AbortError') throw new LlmError('请求已取消或超时');
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new LlmError('请求已取消', { code: 'aborted' });
+    }
     if (err instanceof LlmError) throw err;
     throw new LlmError(`流式请求失败：${err instanceof Error ? err.message : String(err)}`);
   } finally {
