@@ -11,6 +11,7 @@ import {
 } from './prompts.js';
 import { DIFFICULTIES, TOPICS } from './topics.js';
 import { mockChat, mockChatStream } from './mock.js';
+import { detectForeignLanguage, describeLanguageIssue } from './lang.js';
 import type {
   AskTurn,
   AttemptRecord,
@@ -87,8 +88,15 @@ export class Tutor {
     });
 
     let lastError: unknown;
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const suffix = attempt === 0 ? '' : '\n\n注意：必须输出严格合法的 JSON，不要加任何解释文字。';
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      // 第 3 次专门针对语言问题：把「上一次错在哪」明确告诉模型
+      const suffix =
+        attempt === 0
+          ? ''
+          : attempt === 1
+            ? '\n\n注意：必须输出严格合法的 JSON，不要加任何解释文字。'
+            : '\n\n注意：上一次的输出混入了日文/其它语言。这次必须全部使用简体中文叙述，' +
+              '只保留命令、路径、文件名等专有名词为英文。';
       // 题目是一整个 JSON，推理模型的思考过程还要额外吃掉大量 token，
       // 用 callWithReasoningFallback 自动放大预算重试
       const raw = await this.callWithReasoningFallback(3000, (maxTokens) =>
@@ -108,7 +116,19 @@ export class Tutor {
       );
 
       try {
-        return normalizeExercise(parseJsonLoose(raw, '出题结果'), { topic, difficulty });
+        const exercise = normalizeExercise(parseJsonLoose(raw, '出题结果'), { topic, difficulty });
+
+        // 语言漂移检测：提示词压不住时，靠重试兜底。
+        // 中日双语模型（如 SenseNova）遇到日式路径容易把叙述也写成日文。
+        const issue = detectForeignLanguage(
+          [exercise.title, exercise.scenario, exercise.question, ...exercise.acceptance].join('\n'),
+        );
+        if (issue) {
+          lastError = new Error(describeLanguageIssue(issue));
+          continue; // 重新出题，不再用这次的
+        }
+
+        return exercise;
       } catch (err) {
         lastError = err;
       }
@@ -128,7 +148,15 @@ export class Tutor {
         { temperature: 0.1, jsonMode: true, maxTokens },
       ),
     );
-    return normalizeGrade(parseJsonLoose(raw, '判题结果'));
+    const grade = normalizeGrade(parseJsonLoose(raw, '判题结果'));
+    const issue = detectForeignLanguage([grade.reason, grade.corrected_answer, ...grade.knowledge_points].join('\n'));
+    if (issue) {
+      // 判题结果不重试（已消耗一次请求），但把问题明确标出来，避免用户看到混杂文本却不知原因
+      grade.reason = `${grade.reason}\n\n（注意：模型评语混入了${
+        issue.language === 'japanese' ? '日文' : '韩文'
+      }，如影响理解请重试本题）`;
+    }
+    return grade;
   }
 
   /** 答疑（流式输出，边生成边回调）。 */
