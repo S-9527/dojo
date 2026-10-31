@@ -38,6 +38,8 @@ export interface GenerateOptions {
   extraRequirement?: string;
   /** 用于中断请求（Esc 取消） */
   signal?: AbortSignal;
+  /** 模型的思考过程（推理模型才有），用于界面展示 */
+  onReasoning?: (reasoning: string) => void;
 }
 
 export interface AskOptions {
@@ -81,7 +83,13 @@ export class Tutor {
   }
 
   /** 出题。JSON 不合规时重试一次并降低温度提高稳定性。 */
-  async generateExercise({ topic, difficulty, extraRequirement = '', signal }: GenerateOptions): Promise<Exercise> {
+  async generateExercise({
+    topic,
+    difficulty,
+    extraRequirement = '',
+    signal,
+    onReasoning,
+  }: GenerateOptions): Promise<Exercise> {
     const { historyLines, avoidTitles } = this.contextFor(topic);
     const prompt = buildExercisePrompt({
       topicLabel: TOPICS[topic].label,
@@ -116,6 +124,7 @@ export class Tutor {
             jsonMode: true,
             maxTokens,
             signal,
+            onReasoning,
           },
         ),
       );
@@ -142,7 +151,11 @@ export class Tutor {
   }
 
   /** 判题。温度压到 0.1，尽量让同样的答案得到同样的判定。 */
-  async grade(exercise: Exercise, answer: string, options: { signal?: AbortSignal } = {}): Promise<Grade> {
+  async grade(
+    exercise: Exercise,
+    answer: string,
+    options: { signal?: AbortSignal; onReasoning?: (reasoning: string) => void } = {},
+  ): Promise<Grade> {
     const raw = await this.callWithReasoningFallback('grade', 1500, 3500, (maxTokens) =>
       this.chatFn(
         this.config,
@@ -150,7 +163,13 @@ export class Tutor {
           { role: 'system', content: systemPrompt() },
           { role: 'user', content: buildGradePrompt(exercise, answer) },
         ],
-        { temperature: 0.1, jsonMode: true, maxTokens, signal: options.signal },
+        {
+          temperature: 0.1,
+          jsonMode: true,
+          maxTokens,
+          signal: options.signal,
+          onReasoning: options.onReasoning,
+        },
       ),
     );
     const grade = normalizeGrade(parseJsonLoose(raw, '判题结果'));
@@ -181,14 +200,23 @@ export class Tutor {
   }
 
   /** 递进式提示：级别越高越接近答案。 */
-  async hint(exercise: Exercise, hintLevel: number, options: { signal?: AbortSignal } = {}): Promise<string> {
+  async hint(
+    exercise: Exercise,
+    hintLevel: number,
+    options: { signal?: AbortSignal; onReasoning?: (reasoning: string) => void } = {},
+  ): Promise<string> {
     const raw = await this.chatFn(
       this.config,
       [
         { role: 'system', content: systemPrompt() },
         { role: 'user', content: buildHintPrompt(exercise, hintLevel) },
       ],
-      { temperature: 0.4, maxTokens: this.budget(800), signal: options.signal },
+      {
+        temperature: 0.4,
+        maxTokens: this.budget(800),
+        signal: options.signal,
+        onReasoning: options.onReasoning,
+      },
     );
     return raw.trim();
   }

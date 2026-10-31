@@ -383,6 +383,31 @@ if (retryBudget <= first) throw err;   // 到顶就不再试
 教训：**多个重试机制叠加时，必须算最坏情况的请求数与总开销**，
 否则每个机制单独看都合理，合起来就失控。
 
+### 13. 有快捷键，但没有可展开的东西
+
+用户报「练习面板按 `zo` 没反应，直接变成输入 `zo` 了」。
+排查后发现不是快捷键坏了，而是**练习面板里根本没有思考区**：
+
+- 思考区的 UI 原来只写在 `ChatPanel` 里，练习面板没有
+- 更根本的是，出题走**非流式**的 `chat()`，而它只返回正文，
+  把 `message.reasoning` 丢掉了 —— 就算有 UI 也没内容可显示
+
+两处都得补：
+
+1. **非流式也要回传思考过程**：
+
+```ts
+// llm.ts：非流式响应里同样有完整 reasoning
+const reasoningText = extractReasoning(payload);
+if (reasoningText) onReasoning?.(reasoningText);
+```
+
+2. **抽出共用的 `ReasoningPanel`**，练习与对话两个面板都用它
+
+教训：**加了一个快捷键之后，要确认它在每个面板里都有作用对象**。
+只在一个面板里实现 UI，另一个面板的快捷键就成了「无提示的哑键」——
+用户按下去没反应，还会把按键当成普通输入。这比没有快捷键更让人困惑。
+
 ## 参考 Claude Code 的观察
 
 Claude Code **没有公开源码**：`anthropics/claude-code` 仓库只有文档/示例/插件，

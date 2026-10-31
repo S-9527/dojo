@@ -2,12 +2,9 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import type { AskTurn } from '../../types.js';
 import { Empty, RichText, Section } from './base.js';
-import { ScrollBox } from './ScrollBox.js';
+import { ReasoningPanel } from './ReasoningPanel.js';
 import { theme } from '../theme.js';
 import type { ViewportState } from '../scroll.js';
-
-/** 思考区的高度：给问答内容留出空间，同时保证滚动有意义。 */
-export const REASONING_VIEWPORT_HEIGHT = 10;
 
 export interface ChatPanelProps {
   history: AskTurn[];
@@ -69,31 +66,13 @@ export function ChatPanel({
         </Box>
       ))}
 
-      {/* 思考过程：生成中实时流入，结束后仍可展开与滚动 */}
-      {reasoning ? (
-        <Box flexDirection="column" marginTop={1} paddingLeft={2}>
-          <Text color={theme.dim}>
-            {showReasoning
-              ? `▾ 思考过程${generating ? '（生成中…）' : '（已完成）'}  zc 收起`
-              : `▸ 思考过程${generating ? '，生成中…' : ''}  zo 展开`}
-          </Text>
-          {showReasoning ? (
-            <Box paddingLeft={1} flexDirection="column">
-              <ScrollBox
-                text={reasoning}
-                height={REASONING_VIEWPORT_HEIGHT}
-                // 必须扣掉：Frame paddingX(2) + 外层 paddingLeft(2) + 内层 paddingLeft(1) + 余量
-                // 给宽了 Ink 会二次折行，10 行窗口会变成 20 行把屏幕顶掉
-                width={Math.max(16, width - 16)}
-                state={reasoningView}
-              />
-              <Text color={theme.dim}>
-                {'↑↓ 逐行 · u/d 翻页 · g 顶部 · G 最新 · zo/zc 展开收起'}
-              </Text>
-            </Box>
-          ) : null}
-        </Box>
-      ) : null}
+      <ReasoningPanel
+        text={reasoning}
+        expanded={showReasoning}
+        view={reasoningView}
+        generating={generating}
+        width={width}
+      />
 
       {streaming ? (
         <Box flexDirection="column" marginTop={1}>

@@ -269,7 +269,8 @@ token 预算不够时，思考过程会把额度吃光，`content` 为空、`fin
 - **自动补救**：检测到这种情况会自动放大预算重试，并记住「这个模型需要多大预算」
 - **预算有硬上限**：出题最多 6000、判题最多 3500，不会随重试无限膨胀
 - **可手动调**：`export DOJO_TOKEN_SCALE=2` 整体放大 token 预算
-- **思考过程可滚动查看**：默认折叠成一行，`zo` 展开后可滚动翻看完整推理链
+- **思考过程可滚动查看**：练习面板和对话面板都有。默认折叠成一行，
+  `zo` 展开后可滚动翻看完整推理链。出题、判题、答疑的思考过程都会保留
 
 ```
  你 ❯ uniq 为什么要先 sort
@@ -349,7 +350,7 @@ SenseNova 的 Token Plan 按**积分**计费（分通用积分和 Flash-Lite 专
 npm run dev          # tsx 直跑源码
 npm run build        # tsc → dist/
 npm run typecheck    # 源码 + 测试全部类型检查
-npm test             # 182 个测试
+npm test             # 186 个测试
 ```
 
 > **注意 `src/` 里 import 写 `./xxx.js` 不是笔误。** `tsc` 不做路径重写，
@@ -408,6 +409,7 @@ src/tui/
     base.tsx             Frame / Section / Field / RichText
     InputBar.tsx         自研输入框（快捷键与文本互斥）
     CommandMenu.tsx      斜杠指令候选菜单
+    ReasoningPanel.tsx   思考过程展示区（两个面板共用）
     ScrollBox.tsx        限高可滚动文本视口
     StatusLine.tsx       进行中/完成状态行
     ConnectPanel.tsx     /connect 分步向导

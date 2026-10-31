@@ -10,6 +10,7 @@ import { ExerciseCard } from '../src/tui/components/ExerciseCard.tsx';
 import { GradePanel, HintPanel, ErrorPanel } from '../src/tui/components/GradePanel.tsx';
 import { StatsPanel } from '../src/tui/components/StatsPanel.tsx';
 import { StatusLine } from '../src/tui/components/StatusLine.tsx';
+import { ReasoningPanel } from '../src/tui/components/ReasoningPanel.tsx';
 import { ChatPanel } from '../src/tui/components/ChatPanel.tsx';
 import { bar } from '../src/tui/theme.ts';
 import { normalizeExercise, normalizeGrade } from '../src/schema.ts';
@@ -280,4 +281,70 @@ test('StatusLine: 失败时用叉号与失败文案', () => {
   unmount();
   assert.match(frame, /✗/);
   assert.match(frame, /出题失败/);
+});
+
+/**
+ * 练习面板也要能看思考过程。
+ * 实际踩到的坑：思考区原来只在 ChatPanel 里渲染，
+ * 导致练习面板按 zo 毫无反应 —— 不是快捷键坏了，而是那里根本没有可展开的内容区。
+ */
+test('ReasoningPanel: 空内容不渲染，避免出现无意义的「展开」入口', () => {
+  const { lastFrame, unmount } = render(
+    React.createElement(ReasoningPanel, {
+      text: '',
+      expanded: false,
+      view: { offset: null },
+      width: 80,
+    }),
+  );
+  const frame = lastFrame() ?? '';
+  unmount();
+  assert.ok(!frame.includes('思考过程'), '没有内容时不该显示入口');
+});
+
+test('ReasoningPanel: 折叠时显示 zo 提示，不泄露内容', () => {
+  const { lastFrame, unmount } = render(
+    React.createElement(ReasoningPanel, {
+      text: '这是模型的内部推理链',
+      expanded: false,
+      view: { offset: null },
+      width: 80,
+    }),
+  );
+  const frame = lastFrame() ?? '';
+  unmount();
+  assert.match(frame, /思考过程/);
+  assert.match(frame, /zo 展开/);
+  assert.ok(!frame.includes('内部推理链'), '折叠时不应显示内容');
+});
+
+test('ReasoningPanel: 展开时显示内容与滚动提示', () => {
+  const { lastFrame, unmount } = render(
+    React.createElement(ReasoningPanel, {
+      text: '这是模型的内部推理链',
+      expanded: true,
+      view: { offset: null },
+      width: 80,
+    }),
+  );
+  const frame = lastFrame() ?? '';
+  unmount();
+  assert.match(frame, /内部推理链/);
+  assert.match(frame, /zc 收起/);
+  assert.match(frame, /翻页/, '应提示滚动操作');
+});
+
+test('ReasoningPanel: 生成中标注状态', () => {
+  const { lastFrame, unmount } = render(
+    React.createElement(ReasoningPanel, {
+      text: '思考中',
+      expanded: false,
+      view: { offset: null },
+      generating: true,
+      width: 80,
+    }),
+  );
+  const frame = lastFrame() ?? '';
+  unmount();
+  assert.match(frame, /生成中/);
 });

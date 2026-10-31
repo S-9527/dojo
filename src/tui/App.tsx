@@ -14,11 +14,12 @@ import { StatsPanel } from './components/StatsPanel.js';
 import { CommandMenu } from './components/CommandMenu.js';
 import { ErrorPanel, GradePanel, HintPanel } from './components/GradePanel.js';
 import { StatusLine } from './components/StatusLine.js';
+import { ReasoningPanel } from './components/ReasoningPanel.js';
 import { estimateTokens } from './spinner.js';
 import { InputBar, type ShortcutKey } from './components/InputBar.js';
 import { theme } from './theme.js';
 import { scrollBy, wrapToLines, type ViewportState } from './scroll.js';
-import { REASONING_VIEWPORT_HEIGHT } from './components/ChatPanel.js';
+import { REASONING_VIEWPORT_HEIGHT } from './components/ReasoningPanel.js';
 
 type Panel = 'practice' | 'chat' | 'stats';
 type Phase = 'loading' | 'awaiting' | 'grading' | 'graded' | 'hinting' | 'asking';
@@ -239,10 +240,17 @@ export function App({
       setRevealed(false);
       setShowAllHints(false);
       setAnswer('');
+      setReasoning('');
+      setReasoningView({ offset: null });
       const startedAt = Date.now();
       const signal = startAbortable();
       try {
-        const ex = await tutor.generateExercise({ topic: nextTopic, difficulty, signal });
+        const ex = await tutor.generateExercise({
+          topic: nextTopic,
+          difficulty,
+          signal,
+          onReasoning: (text) => setReasoning(text),
+        });
         setExercise(ex);
         setIndex((i) => i + 1);
         setPanel('practice');
@@ -278,7 +286,10 @@ export function App({
       const startedAt = Date.now();
       const signal = startAbortable();
       try {
-        const result = await tutor.grade(exercise, text, { signal });
+        const result = await tutor.grade(exercise, text, {
+          signal,
+          onReasoning: (text) => setReasoning(text),
+        });
         setGrade(result);
         setPhase('graded');
         setLastRun({ kind: 'grade', elapsedMs: Date.now() - startedAt, ok: true });
@@ -315,7 +326,10 @@ export function App({
     setPhase('hinting');
     setError(null);
     try {
-      const text = await tutor.hint(exercise, level, { signal: startAbortable() });
+      const text = await tutor.hint(exercise, level, {
+        signal: startAbortable(),
+        onReasoning: (r) => setReasoning(r),
+      });
       setHint({ text, level: level + 1 });
       setPhase('graded');
     } catch (err) {
@@ -742,6 +756,14 @@ export function App({
           {exercise ? (
             <ExerciseCard exercise={exercise} index={index} revealed={revealed} showHints={showAllHints} />
           ) : null}
+
+          <ReasoningPanel
+            text={reasoningText}
+            expanded={showReasoning}
+            view={reasoningView}
+            generating={phase === 'loading' || phase === 'grading' || phase === 'hinting'}
+            width={width}
+          />
 
           {hint ? <HintPanel text={hint.text} level={hint.level} total={exercise?.hints.length ?? 3} /> : null}
           {grade ? <GradePanel grade={grade} /> : null}

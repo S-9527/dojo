@@ -42,7 +42,7 @@ interface ChatRequestBody {
 
 /** 非流式对话，返回完整文本。 */
 export async function chat(config: ResolvedConfig, messages: ChatMessage[], options: ChatOptions = {}): Promise<string> {
-  const { temperature = 0.7, jsonMode = false, maxTokens = 1600, signal } = options;
+  const { temperature = 0.7, jsonMode = false, maxTokens = 1600, signal, onReasoning } = options;
 
   const body: ChatRequestBody = {
     model: config.model,
@@ -53,7 +53,7 @@ export async function chat(config: ResolvedConfig, messages: ChatMessage[], opti
   };
   if (jsonMode) body.response_format = { type: 'json_object' };
 
-  const text = await requestWithRetry(config, body, signal);
+  const text = await requestWithRetry(config, body, signal, 0, onReasoning);
   if (!text.trim()) throw new LlmError('模型返回了空内容，请重试或换一个模型');
   return text;
 }
@@ -63,21 +63,27 @@ async function requestWithRetry(
   body: ChatRequestBody,
   signal: AbortSignal | undefined,
   attempt = 0,
+  onReasoning?: (reasoning: string) => void,
 ): Promise<string> {
   const maxAttempts = 3;
   try {
-    return await requestOnce(config, body, signal);
+    return await requestOnce(config, body, signal, onReasoning);
   } catch (err) {
     const canRetry = err instanceof LlmError && err.retryable && attempt < maxAttempts - 1;
     if (!canRetry || signal?.aborted) throw err;
     const wait = 800 * 2 ** attempt;
     process.stderr.write(`\x1b[2m接口暂时不可用（${err.status ?? '网络'}），${wait}ms 后重试…\x1b[0m\n`);
     await sleep(wait);
-    return requestWithRetry(config, body, signal, attempt + 1);
+    return requestWithRetry(config, body, signal, attempt + 1, onReasoning);
   }
 }
 
-async function requestOnce(config: ResolvedConfig, body: ChatRequestBody, outerSignal?: AbortSignal): Promise<string> {
+async function requestOnce(
+  config: ResolvedConfig,
+  body: ChatRequestBody,
+  outerSignal?: AbortSignal,
+  onReasoning?: (reasoning: string) => void,
+): Promise<string> {
   if (!config.apiKey) {
     throw new LlmError('缺少 API Key。请设置环境变量 DOJO_API_KEY，或运行 `dojo config` 查看配置方法');
   }
@@ -138,6 +144,10 @@ async function requestOnce(config: ResolvedConfig, body: ChatRequestBody, outerS
 
   const payload = (await response.json().catch(() => null)) as unknown;
   const content = extractContent(payload);
+
+  // 非流式响应也可能带完整思考过程，报告给上层，避免被丢弃
+  const reasoningText = extractReasoning(payload);
+  if (reasoningText) onReasoning?.(reasoningText);
 
   // 有些平台用 HTTP 200 返回业务错误，要当成错误处理
   const errMsg = looksLikeErrorPayload(payload);

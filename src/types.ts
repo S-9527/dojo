@@ -79,6 +79,12 @@ export interface ChatOptions {
   jsonMode?: boolean;
   maxTokens?: number;
   signal?: AbortSignal;
+  /**
+   * 非流式响应里的思考过程。
+   * 推理模型即使非流式也会在 message.reasoning 里返回完整思考，
+   * 不报告的话这部分信息就被丢掉了（练习面板因此没有思考可看）。
+   */
+  onReasoning?: (reasoning: string) => void;
 }
 
 export interface StreamOptions extends ChatOptions {
