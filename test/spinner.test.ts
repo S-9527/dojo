@@ -13,10 +13,11 @@ import {
   supportsUnicode,
 } from '../src/tui/spinner.ts';
 
-test('spinnerFrames: 正常终端用花式帧', () => {
+test('spinnerFrames: 正常终端用盲文点阵', () => {
   const frames = spinnerFrames({ TERM: 'xterm-256color' });
-  assert.ok(frames.length >= 4);
-  assert.ok(frames.includes('✻'), '应包含绽放动画的字符');
+  assert.equal(frames.length, 10);
+  assert.equal(frames[0], '⠋');
+  assert.ok(frames.every((f) => /^[\u2800-\u28ff]$/.test(f)), '应为盲文点阵字符');
 });
 
 test('spinnerFrames: dumb 终端退回 ASCII', () => {
@@ -27,7 +28,7 @@ test('spinnerFrames: dumb 终端退回 ASCII', () => {
 });
 
 test('spinnerFrames: 可显式关闭 Unicode', () => {
-  assert.equal(spinnerFrames({ NO_UNICODE: '1' }).includes('✻'), false);
+  assert.equal(spinnerFrames({ NO_UNICODE: '1' }).includes('⠋'), false);
 });
 
 test('supportsUnicode: 常规环境为真', () => {

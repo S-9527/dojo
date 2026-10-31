@@ -1,13 +1,13 @@
 /**
  * 加载动画帧与 token 估算。
  *
- * 帧序列参考了 Claude Code 的做法：用 `· ✢ ✳ ✶ ✻ ✽` 这种「绽放」动画，
- * 比盲文点阵（⠋⠙⠹…）更细腻，且按终端能力降级。
- * 注意这里只借鉴观感与思路，代码是自己写的。
+ * 帧序列用盲文点阵：走位明显、节奏均匀，比 Claude Code 那种
+ * `· ✢ ✳ ✶ ✻ ✽` 绽放动画更容易看出「还在跑」。
+ * 不支持 Unicode 的终端退回 ASCII，避免显示成方块。
  */
 
-/** 支持 Unicode 的终端用花式帧，否则退回 ASCII。 */
-const BLOOM = ['·', '✢', '✳', '✶', '✻', '✽'];
+/** 默认帧：盲文点阵。 */
+const BRAILLE = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const ASCII = ['|', '/', '-', '\\'];
 
 /** 判断当前终端是否适合显示 Unicode 符号。 */
@@ -21,7 +21,7 @@ export function supportsUnicode(env: NodeJS.ProcessEnv = process.env): boolean {
 
 /** 取动画帧。 */
 export function spinnerFrames(env: NodeJS.ProcessEnv = process.env): string[] {
-  return supportsUnicode(env) ? BLOOM : ASCII;
+  return supportsUnicode(env) ? BRAILLE : ASCII;
 }
 
 /** 帧间隔（毫秒）。太慢显得卡，太快晃眼。 */
