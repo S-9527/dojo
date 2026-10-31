@@ -78,6 +78,18 @@ export function App({
   // 推理模型的思考过程：默认折叠，避免刷屏
   const [reasoning, setReasoning] = React.useState('');
   const [showReasoning, setShowReasoning] = React.useState(false);
+  /**
+   * `z` 前缀：等待第二个键组成 zo(展开) / zc(关闭)。
+   * Vim 的 fold 键位，比 Ctrl 组合更不容易被终端占用。
+   */
+  const [zPending, setZPending] = React.useState(false);
+
+  // z 前缀不能一直挂着：超时自动清除，避免下一次按键被误当成 zo/zc
+  React.useEffect(() => {
+    if (!zPending) return;
+    const timer = setTimeout(() => setZPending(false), 1200);
+    return () => clearTimeout(timer);
+  }, [zPending]);
   // 思考过程的滚动位置（null = 跟随底部，流式输出时自动滚）
   const [reasoningView, setReasoningView] = React.useState<ViewportState>({ offset: null });
 
@@ -493,10 +505,34 @@ export function App({
         void runReview();
         return true;
       }
-      // Ctrl-T 展开/折叠推理模型的思考过程
-      if (key.ctrl && input === 't') {
-        setShowReasoning((v) => !v);
-        return true;
+      // 思考过程的展开/关闭：zo 展开、zc 关闭（沿用 Vim fold 键位）。
+      // 不用 Ctrl 组合是因为 Ctrl-T 在部分终端被占用，且无法用鼠标点击
+      // —— Ink 8 会主动丢弃鼠标事件。
+      const canToggleReasoning = Boolean(reasoningText);
+      if (canToggleReasoning) {
+        if (zPending) {
+          setZPending(false);
+          if (input === 'o') {
+            setShowReasoning(true);
+            setReasoningView({ offset: null });
+            return true;
+          }
+          if (input === 'c') {
+            setShowReasoning(false);
+            return true;
+          }
+          // 不是 zo/zc：把 z 当普通字符处理，交给输入框
+          return false;
+        }
+        if (!key.ctrl && !key.meta && input === 'z') {
+          setZPending(true);
+          return true;
+        }
+        // 兼容旧习惯：Ctrl-T 仍然可切换
+        if (key.ctrl && input === 't') {
+          setShowReasoning((v) => !v);
+          return true;
+        }
       }
 
       // 思考过程展开时，方向键/PgUp/PgDn/Home/End 用于滚动
@@ -547,7 +583,7 @@ export function App({
 
   const footer = connect.active
     ? 'Esc 取消向导 · ↑↓ 选服务商 · Enter 下一步'
-    : 'Tab 面板 · Ctrl-N 换题 · Ctrl-G 提示 · Ctrl-X 答案 · Ctrl-A 提问 · Ctrl-R 复盘 · Ctrl-T 思考 · Ctrl-C 退出';
+    : 'Tab 面板 · Ctrl-N 换题 · Ctrl-G 提示 · Ctrl-X 答案 · Ctrl-A 提问 · Ctrl-R 复盘 · zo/zc 思考 · Ctrl-C 退出';
 
   // 状态栏优先显示连接状态，让用户随时知道当前在跟谁说话
   const status = disconnected

@@ -74,8 +74,8 @@ export function ChatPanel({
         <Box flexDirection="column" marginTop={1} paddingLeft={2}>
           <Text color={theme.dim}>
             {showReasoning
-              ? `▾ 思考过程${generating ? '（生成中…）' : '（已完成）'}`
-              : `▸ 思考过程${generating ? '，生成中…' : ''}（Ctrl-T 展开）`}
+              ? `▾ 思考过程${generating ? '（生成中…）' : '（已完成）'}  zc 收起`
+              : `▸ 思考过程${generating ? '，生成中…' : ''}  zo 展开`}
           </Text>
           {showReasoning ? (
             <Box paddingLeft={1} flexDirection="column">
@@ -88,7 +88,7 @@ export function ChatPanel({
                 state={reasoningView}
               />
               <Text color={theme.dim}>
-                {'↑↓ 逐行 · u/d 翻页 · g 顶部 · G 最新（跟随）'}
+                {'↑↓ 逐行 · u/d 翻页 · g 顶部 · G 最新 · zo/zc 展开收起'}
               </Text>
             </Box>
           ) : null}

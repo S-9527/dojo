@@ -26,6 +26,7 @@ export interface InputBarProps {
 
 export interface ShortcutKey {
   ctrl: boolean;
+  meta: boolean;
   tab: boolean;
   return: boolean;
   escape: boolean;
@@ -53,6 +54,7 @@ export function InputBar({
   useInput((input, key) => {
     const shortcutKey: ShortcutKey = {
       ctrl: key.ctrl,
+      meta: key.meta,
       tab: key.tab,
       return: key.return,
       escape: key.escape,

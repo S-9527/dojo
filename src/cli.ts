@@ -57,7 +57,7 @@ export function printHelp(): void {
 
   TUI 快捷键
     Tab 切换面板   Ctrl-N 换题   Ctrl-G 提示   Ctrl-X 答案
-    Ctrl-A 提问    Ctrl-R 复盘   Ctrl-T 思考过程   Ctrl-C 退出
+    Ctrl-A 提问    Ctrl-R 复盘   zo/zc 思考过程   Ctrl-C 退出
 
   主题  ${TOPIC_KEYS.map((k) => `${k}(${TOPICS[k].label})`).join('  ')}
   难度  ${DIFFICULTY_KEYS.map((k) => `${k}(${DIFFICULTIES[k].label})`).join('  ')}

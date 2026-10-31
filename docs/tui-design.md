@@ -260,6 +260,41 @@ for (const ch of raw) {
 思考过程**不写进 history**：它属于"当前这次交互"的临时视图，追问时会重置。
 这样既不会重复渲染，也不会让历史越滚越长。
 
+### 8. Ink 8 会主动丢弃鼠标事件，点击展开做不了
+
+想要 opencode 那样「点一下展开」，实测不可行。Ink 的输入处理里有这样一段：
+
+```js
+// node_modules/ink/build/components/App.js
+// A complete CSI or SS3 sequence that maps to no key Ink can represent
+// is not printable text. Terminal replies (focus in/out, cursor position,
+// mouse, device attributes) ... would otherwise reach useInput
+if (isCompleteControlSequence(event)) {
+  const key = parseKeypress(event);
+  if (!key.isKittyProtocol && key.name === '') return;   // ← 鼠标事件在这里被丢弃
+}
+```
+
+Ink 8 也没有 `onClick`，`useBoxMetrics` 只提供布局坐标，不接鼠标。
+要支持点击得自己开 `\x1b[?1000h` 鼠标追踪并解析 SGR 序列，等于绕开 Ink 的输入层，
+与它「单一 useInput 分发」的模型冲突，代价大于收益。
+
+**替代方案**：改用 Vim 的 fold 键位 `zo`（展开）/ `zc`（收起）。
+纯字母、不依赖 Ctrl 组合（`Ctrl-T` 在部分终端被占用），也不受鼠标支持缺失影响。
+
+实现上需要一个 `z` 前缀状态：
+
+```ts
+if (!key.ctrl && input === 'z') { setZPending(true); return true; }  // 吃掉 z
+if (zPending && input === 'o')  { setShowReasoning(true); return true; }
+if (zPending && input === 'c')  { setShowReasoning(false); return true; }
+// 不是 zo/zc：返回 false 让它落到输入框，不能吞掉用户输入
+```
+
+两个必要的保险：
+- 前缀超时清除（1.2s），否则按了 `z` 后走神，下次按键会被误判成 zo/zc
+- 前缀未命中时必须 `return false`，让字符正常进输入框（有测试锁定 `zebra` 能完整输入）
+
 ## 非 TTY 回退
 
 `stdout` 不是 TTY（管道、CI、`| less`）时 Ink 会报错，自动降级到 `src/plain.ts` 的纯文本界面。

@@ -95,6 +95,7 @@ export function ConnectPanel({
     (input, key) => {
       onShortcut(input, {
         ctrl: key.ctrl,
+        meta: key.meta,
         tab: key.tab,
         return: key.return,
         escape: key.escape,

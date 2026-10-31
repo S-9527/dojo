@@ -159,7 +159,7 @@ test('ChatPanel: 传入 reasoning 时折叠，只显示提示行', () => {
   const frame = lastFrame() ?? '';
   assert.match(frame, /思考过程/);
   assert.ok(!frame.includes('用户问的是为什么'), '折叠时不应显示思考内容');
-  assert.match(frame, /Ctrl-T/, '应提示如何展开');
+  assert.match(frame, /zo/, '应提示用 zo 展开');
 });
 
 test('ChatPanel: 展开时渲染思考内容', () => {

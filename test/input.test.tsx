@@ -148,3 +148,96 @@ test('InputBar: 空值显示占位符', () => {
   );
   assert.match(instance.lastFrame() ?? '', /输入命令/);
 });
+
+/**
+ * zo/zc 折叠键。
+ * 为什么不用 Ctrl-T：部分终端把 Ctrl-T 占作别用，而且 Ink 8 会主动丢弃鼠标事件，
+ * 所以既不能点击、Ctrl 组合也不可靠。改用 Vim 的 fold 键位，纯字母、无冲突。
+ */
+test('InputBar: 前缀键 z 不进入输入框', async () => {
+  const seen: string[] = [];
+  const hits: string[] = [];
+  const instance = render(
+    React.createElement(Harness, {
+      onChangeSpy: (v: string) => seen.push(v),
+      onShortcut: (input: string) => {
+        if (input === 'z') {
+          hits.push(input);
+          return true; // 消费掉，等第二个键
+        }
+        return false;
+      },
+    }),
+  );
+
+  instance.stdin.write('z');
+  await tick();
+  assert.deepEqual(hits, ['z'], 'z 应被识别为前缀');
+  assert.deepEqual(seen, [], 'z 不应进入输入框');
+});
+
+test('InputBar: 前缀未命中时后续字符照常输入', async () => {
+  const seen: string[] = [];
+  let pending = false;
+  const instance = render(
+    React.createElement(Harness, {
+      onChangeSpy: (v: string) => seen.push(v),
+      onShortcut: (input: string) => {
+        if (pending) {
+          pending = false;
+          if (input === 'o' || input === 'c') return true;
+          return false; // 不是 zo/zc，让字符进输入框
+        }
+        if (input === 'z') {
+          pending = true;
+          return true;
+        }
+        return false;
+      },
+    }),
+  );
+
+  instance.stdin.write('z');
+  await tick();
+  instance.stdin.write('e');
+  await tick();
+  assert.equal(seen.at(-1), 'e', 'z 之后的普通字符必须能输入，不能被吞掉');
+});
+
+test('InputBar: zo 与 zc 分别触发展开和收起', async () => {
+  const events: string[] = [];
+  let pending = false;
+  const instance = render(
+    React.createElement(Harness, {
+      onShortcut: (input: string) => {
+        if (pending) {
+          pending = false;
+          if (input === 'o') {
+            events.push('expand');
+            return true;
+          }
+          if (input === 'c') {
+            events.push('collapse');
+            return true;
+          }
+          return false;
+        }
+        if (input === 'z') {
+          pending = true;
+          return true;
+        }
+        return false;
+      },
+    }),
+  );
+
+  instance.stdin.write('z');
+  await tick();
+  instance.stdin.write('o');
+  await tick();
+  instance.stdin.write('z');
+  await tick();
+  instance.stdin.write('c');
+  await tick();
+  assert.deepEqual(events, ['expand', 'collapse']);
+});
