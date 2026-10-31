@@ -352,6 +352,37 @@ if (controller.signal.aborted) {
 **超时与取消必须分开**：超时可重试，取消不可重试。否则用户按了 Esc，
 重试逻辑会把请求又发一遍。
 
+### 12. 预算倍数相乘会失控
+
+推理补救最初是这样叠加的：
+
+```ts
+budget(base) = base × (isReasoningModel ? 3 : 1)     // 推理倍数
+retryBudget  = min(9000, budget(base) × 1.5)          // 重试再乘 1.5
+```
+
+外层还有一个「语言不对就重出」的循环（最多 3 次），每次内部又可能重试一次。
+最坏情况：**6 次请求 × 9000 token = 54000 token**，推理模型要跑十几分钟。
+用户实测出一次题花 **1 分 54 秒**。
+
+两个修法：
+
+1. **倍数不叠加**：`budget()` 只反映用户配置，放大交给补救逻辑单独控制，
+   并且有硬上限（出题 6000、判题 3500）
+2. **记住探明的预算**：一旦发现某个预算够用就存下来，后续重试直接用，
+   不再从小预算重新试探一遍
+
+```ts
+const learned = this.learnedBudget.get(kind);
+const first = learned ?? this.budget(base);
+// 失败才放大一档，且不超过 cap
+const retryBudget = Math.min(cap, first * 2);
+if (retryBudget <= first) throw err;   // 到顶就不再试
+```
+
+教训：**多个重试机制叠加时，必须算最坏情况的请求数与总开销**，
+否则每个机制单独看都合理，合起来就失控。
+
 ## 参考 Claude Code 的观察
 
 Claude Code **没有公开源码**：`anthropics/claude-code` 仓库只有文档/示例/插件，

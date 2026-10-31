@@ -103,7 +103,7 @@ export class Tutor {
               '只保留命令、路径、文件名等专有名词为英文。';
       // 题目是一整个 JSON，推理模型的思考过程还要额外吃掉大量 token，
       // 用 callWithReasoningFallback 自动放大预算重试
-      const raw = await this.callWithReasoningFallback(3000, (maxTokens) =>
+      const raw = await this.callWithReasoningFallback('exercise', 2500, 6000, (maxTokens) =>
         this.chatFn(
           this.config,
           [
@@ -143,7 +143,7 @@ export class Tutor {
 
   /** 判题。温度压到 0.1，尽量让同样的答案得到同样的判定。 */
   async grade(exercise: Exercise, answer: string, options: { signal?: AbortSignal } = {}): Promise<Grade> {
-    const raw = await this.callWithReasoningFallback(1500, (maxTokens) =>
+    const raw = await this.callWithReasoningFallback('grade', 1500, 3500, (maxTokens) =>
       this.chatFn(
         this.config,
         [
@@ -212,9 +212,18 @@ export class Tutor {
    */
   private budget(base: number): number {
     const scale = Number(this.config.tokenScale ?? 1);
-    const effective = (Number.isFinite(scale) && scale > 0 ? scale : 1) * (this.config.isReasoningModel ? 3 : 1);
+    const effective = Number.isFinite(scale) && scale > 0 ? scale : 1;
     return Math.max(base, Math.round(base * effective));
   }
+
+  /**
+   * 已探明「够用」的预算，按调用类型记住。
+   *
+   * 为什么需要它：重试时若仍从 base 重新试探，每次都要先烧一次不足的预算，
+   * 请求数会成倍增长（实测最坏 6 次 × 9000 token，用户要等两分钟以上）。
+   * 记住之后，后续重试直接从够用的预算开始。
+   */
+  private learnedBudget = new Map<string, number>();
 
   /**
    * 带「推理模型自动补救」的调用。
@@ -224,28 +233,36 @@ export class Tutor {
    * 后续调用直接用放大后的预算 —— 用户不需要手动调参。
    */
   private async callWithReasoningFallback(
+    kind: string,
     base: number,
+    cap: number,
     run: (maxTokens: number) => Promise<string>,
   ): Promise<string> {
+    // 之前已经探明这个模型需要更多预算，就直接从那里开始，不再重试一遍
+    const learned = this.learnedBudget.get(kind);
+    const first = learned ?? this.budget(base);
     try {
-      return await run(this.budget(base));
+      return await run(first);
     } catch (err) {
       // 被用户中断时不重试：重试等于无视用户的取消意图
       if (isAbortError(err)) throw err;
       if (!(err instanceof LlmError) || err.code !== 'reasoning-exhausted') throw err;
 
-      // 记住：这个模型是推理模型，之后都按放大预算走。
-      // 注意先置位再取 budget()，否则会拿旧预算；置位后已含 3 倍放大，
-      // 这里只再乘 1.5，避免一次冲到 18000 这种荒唐值。
+      // 只放大一档，且有硬上限：推理模型的思考长度不可控，
+      // 不设上限会让一次出题烧掉几万 token、用户干等几分钟。
+      const retryBudget = Math.min(cap, Math.round(first * 2));
+      if (retryBudget <= first) throw err; // 已到上限，不再试
       this.config.isReasoningModel = true;
-      const retryBudget = Math.min(9000, Math.round(this.budget(base) * 1.5));
       try {
-        return await run(retryBudget);
+        const text = await run(retryBudget);
+        this.learnedBudget.set(kind, retryBudget); // 记住这个预算够用
+        return text;
       } catch (retryErr) {
         if (retryErr instanceof LlmError && retryErr.code === 'reasoning-exhausted') {
+          this.learnedBudget.set(kind, retryBudget);
           throw new LlmError(
-            `这个模型是推理模型，思考过程用掉了大部分 token 预算（已尝试 ${retryBudget}）。\n` +
-              `  建议：设置环境变量 DOJO_TOKEN_SCALE=3，或换一个非推理模型。`,
+            `这个模型的思考过程太长，已经把 token 预算加到 ${retryBudget} 仍不够。\n` +
+              `  建议：换一个非推理模型，或设置 DOJO_TOKEN_SCALE 手动指定倍数。`,
             { code: 'reasoning-exhausted' },
           );
         }
