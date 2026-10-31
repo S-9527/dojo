@@ -191,7 +191,7 @@ export async function chatStream(
   messages: ChatMessage[],
   options: StreamOptions = {},
 ): Promise<string> {
-  const { onDelta, onReasoning, temperature = 0.7, maxTokens = 900, signal } = options;
+  const { onDelta, onReasoning, onProgress, temperature = 0.7, maxTokens = 900, signal } = options;
   if (!config.apiKey) return chat(config, messages, { temperature, maxTokens, signal });
 
   const controller = new AbortController();
@@ -220,6 +220,7 @@ export async function chatStream(
     const decoder = new globalThis.TextDecoder();
     let buffer = '';
     let full = '';
+    let received = ''; // 正文 + 思考过程，用于 token 估算
 
     for await (const chunk of chunksOf(reader, decoder)) {
       buffer += chunk;
@@ -242,12 +243,17 @@ export async function chatStream(
               : typeof delta?.reasoning_content === 'string'
                 ? delta.reasoning_content
                 : '';
-          if (reasoning) onReasoning?.(reasoning);
+          if (reasoning) {
+            onReasoning?.(reasoning);
+            received += reasoning;
+          }
 
           if (typeof delta?.content === 'string' && delta.content) {
             full += delta.content;
+            received += delta.content;
             onDelta?.(delta.content);
           }
+          if (reasoning || delta?.content) onProgress?.(received);
         } catch {
           // 忽略无法解析的心跳/注释行
         }

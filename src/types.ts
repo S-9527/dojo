@@ -85,6 +85,11 @@ export interface StreamOptions extends ChatOptions {
   onDelta?: (chunk: string) => void;
   /** 推理模型的思考过程增量（不混入正文） */
   onReasoning?: (chunk: string) => void;
+  /**
+   * 进度回调：已接收的完整内容（正文 + 思考过程）。
+   * 用来估算 token 数显示在状态行上，让人感知「还在跑」。
+   */
+  onProgress?: (received: string) => void;
 }
 
 /** 可注入的对话函数签名，便于 mock 与测试。 */

@@ -352,6 +352,41 @@ if (controller.signal.aborted) {
 **超时与取消必须分开**：超时可重试，取消不可重试。否则用户按了 Esc，
 重试逻辑会把请求又发一遍。
 
+## 参考 Claude Code 的观察
+
+Claude Code **没有公开源码**：`anthropics/claude-code` 仓库只有文档/示例/插件，
+npm 包的 repository 指向私有的 `claude-cli-internal`。
+
+不过 npm 上发布的**旧版本**（如 `1.0.30`）里带着打包后的 `cli.js`，可以观察它的实现。
+2026 年的新版（2.1.x）已改为发布原生二进制（约 328MB），连打包 JS 都没有了。
+
+从 `1.0.30` 的 `cli.js` 里能确认的事实：
+
+- **技术栈属实**：`ink`（96 处）、`yoga`（9 处）、`createElement`（94 处）——React + Ink + Yoga
+- **状态行的组成**（这是本次改动的主要参考）：
+
+```js
+let E = [
+  <Text color="secondaryText">{D}s</Text>,                    // 已用秒数
+  <Box><Spinner mode={A}/><Text>{fmt(Math.round(W/4))} tokens</Text></Box>,
+  <Box><Text bold>esc </Text><Text>to interrupt</Text></Box>,
+];
+```
+
+- **动画帧**是三套绽放字符，按终端选择：`["·","✢","✳","✶","✻","✽"]` 等
+- **思考指示**：`✻ Thinking…`，用次级色 + 斜体
+- **token 是估算**：`W/4`，即字符数 ÷ 4
+
+借鉴时做了两处**刻意的改动**：
+
+1. **token 估算不能照搬 ÷4**：那是按拉丁字符算的，中文一个汉字 ≈ 0.5~0.7 token，
+   ÷4 会低估约 4 倍。改成按字符类型分开算（拉丁 ÷4、CJK ÷1.5）。
+2. **不用 10ms 定时器做计数缓动**：它每 10ms 重算一次让数字平滑爬升，
+   但在这个项目里 CPU 开销不值得，直接跟着数据更新即可。
+
+> 只借鉴观感与思路，代码是自己写的。Claude Code 是专有软件
+> （`SEE LICENSE IN README.md`），不应直接复制其代码。
+
 ## 非 TTY 回退
 
 `stdout` 不是 TTY（管道、CI、`| less`）时 Ink 会报错，自动降级到 `src/plain.ts` 的纯文本界面。

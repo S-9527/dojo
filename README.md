@@ -348,7 +348,7 @@ SenseNova 的 Token Plan 按**积分**计费（分通用积分和 Flash-Lite 专
 npm run dev          # tsx 直跑源码
 npm run build        # tsc → dist/
 npm run typecheck    # 源码 + 测试全部类型检查
-npm test             # 165 个测试
+npm test             # 180 个测试
 ```
 
 > **注意 `src/` 里 import 写 `./xxx.js` 不是笔误。** `tsc` 不做路径重写，
@@ -376,6 +376,7 @@ npm test             # 165 个测试
 - **滚动视口**：CJK 显示宽度计算、折行不超界、跟随底部、滚到底恢复跟随、边界夹取
 - **语言检测**：日文/韩文识别、中文不误报、代码块与专有名词豁免
 - **中断**：预取消的 signal 立即返回、运行中取消立即生效、超时与取消可区分
+- **状态行**：动画帧按终端降级、token 估算（中文不按 ÷4 低估）、耗时格式化
 
 ### 项目结构
 
@@ -401,11 +402,13 @@ src/tui/
   useConnect.ts          /connect 的状态机
   theme.ts               配色、进度条、换行
   scroll.ts              滚动视口逻辑（CJK 宽度、折行、窗口计算）
+  spinner.ts             动画帧、token 估算、时长格式化
   components/
     base.tsx             Frame / Section / Field / RichText
     InputBar.tsx         自研输入框（快捷键与文本互斥）
     CommandMenu.tsx      斜杠指令候选菜单
     ScrollBox.tsx        限高可滚动文本视口
+    StatusLine.tsx       进行中/完成状态行
     ConnectPanel.tsx     /connect 分步向导
     ExerciseCard.tsx     题目卡片
     GradePanel.tsx       判题结果、提示、错误、加载
@@ -433,6 +436,27 @@ docs/why-js-extension.md 为什么 import 写 .js 而不是 .ts
 
 > 注意：`Esc` 的优先级是「先中断，后导航」。也就是说请求进行中按 `Esc` 只会中断，
 > 不会同时切换面板。
+
+## 状态行
+
+进行中的状态行长这样（布局参考 Claude Code）：
+
+```
+ 3s  ✻ 助教正在回答  1.2k tokens  esc 中断
+```
+
+- **已用秒数**：只有转圈看不出「卡住了」还是「还在跑」，秒数给出可判断的信号
+- **动画帧**：`· ✢ ✳ ✶ ✻ ✽` 绽放动画，`TERM=dumb` 时自动退回 ASCII
+- **token 数**：流式过程中实时估算，都是估算值不是接口返回的真实用量
+- **esc 中断**：随时可取消
+
+任务结束后保留一行摘要，不会突然消失：
+
+```
+ ✓ 题目已生成  1.2s  sensenova-6.8-flash-lite
+ ✓ 回答完成  4s  sensenova-6.8-flash-lite
+ ⏹ 已中断  3.6s  sensenova-6.8-flash-lite
+```
 
 ## 输出语言
 

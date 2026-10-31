@@ -231,19 +231,39 @@ test('StatusLine: 完成后显示对勾、耗时与模型名', () => {
   unmount();
   assert.match(frame, /✓/);
   assert.match(frame, /题目已生成/);
-  assert.match(frame, /1\.2s/, '应显示耗时');
+  assert.match(frame, /1s/, '应显示耗时');
   assert.match(frame, /sensenova/, '应显示模型名');
   assert.ok(!frame.includes('正在出题'), '完成后不应再显示进行中文案');
 });
 
-test('StatusLine: 不足 0.1 秒不显示 0.0s', () => {
+test('StatusLine: 不足 1 秒显示 <1s，不出现 0.0s', () => {
   const { lastFrame, unmount } = render(
     React.createElement(StatusLine, { busyText: '判题', done: true, doneText: '完成', elapsedMs: 30 }),
   );
   const frame = lastFrame() ?? '';
   unmount();
-  assert.match(frame, /<0\.1s/);
+  assert.match(frame, /<1s/);
   assert.ok(!frame.includes('0.0s'), '0.0s 是无意义的信息');
+});
+
+test('StatusLine: 进行中显示 token 数与 esc 中断提示', () => {
+  const { lastFrame, unmount } = render(
+    React.createElement(StatusLine, { busyText: '助教正在回答', tokens: 1234 }),
+  );
+  const frame = lastFrame() ?? '';
+  unmount();
+  assert.match(frame, /1\.2k tokens/, 'token 数应紧凑显示');
+  assert.match(frame, /esc/, '应提示可中断');
+  assert.match(frame, /中断/);
+});
+
+test('StatusLine: tokens 为 0 时不显示 token 段', () => {
+  const { lastFrame, unmount } = render(
+    React.createElement(StatusLine, { busyText: '出题', tokens: 0 }),
+  );
+  const frame = lastFrame() ?? '';
+  unmount();
+  assert.ok(!frame.includes('tokens'), '没有数据时不该显示 0 tokens');
 });
 
 test('StatusLine: 失败时用叉号与失败文案', () => {

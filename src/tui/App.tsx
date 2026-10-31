@@ -14,6 +14,7 @@ import { StatsPanel } from './components/StatsPanel.js';
 import { CommandMenu } from './components/CommandMenu.js';
 import { ErrorPanel, GradePanel, HintPanel } from './components/GradePanel.js';
 import { StatusLine } from './components/StatusLine.js';
+import { estimateTokens } from './spinner.js';
 import { InputBar, type ShortcutKey } from './components/InputBar.js';
 import { theme } from './theme.js';
 import { scrollBy, wrapToLines, type ViewportState } from './scroll.js';
@@ -78,6 +79,8 @@ export function App({
   const [streaming, setStreaming] = React.useState('');
   // 推理模型的思考过程：默认折叠，避免刷屏
   const [reasoning, setReasoning] = React.useState('');
+  /** 流式过程中已接收内容的 token 估算，用于状态行显示进度 */
+  const [liveTokens, setLiveTokens] = React.useState(0);
   const [showReasoning, setShowReasoning] = React.useState(false);
   /**
    * `z` 前缀：等待第二个键组成 zo(展开) / zc(关闭)。
@@ -123,6 +126,7 @@ export function App({
    * 请求失败的统一处理。
    * 中断是用户主动行为，不该显示成红色报错，只留一行状态说明。
    */
+  // 提示文案：有正文就说明进入回答阶段了，只看 reasoning 会一直停在「思考」
   const handleRequestError = React.useCallback(
     (err: unknown, startedAt: number, kind: 'exercise' | 'grade') => {
       const elapsedMs = Date.now() - startedAt;
@@ -139,7 +143,7 @@ export function App({
   );
 
   const [lastRun, setLastRun] = React.useState<{
-    kind: 'exercise' | 'grade' | 'hint';
+    kind: 'exercise' | 'grade' | 'hint' | 'ask';
     elapsedMs: number;
     ok: boolean;
     /** 被用户中断（不是失败，显示上要区分） */
@@ -326,9 +330,11 @@ export function App({
       setQuestion('');
       setStreaming('');
       setReasoning('');
+      setLiveTokens(0);
       setReasoningView({ offset: null });
       setPhase('asking');
       setError(null);
+      const startedAt = Date.now();
       try {
         let buffer = '';
         let think = '';
@@ -343,13 +349,22 @@ export function App({
             think += chunk;
             setReasoning(think);
           },
+          // token 估算按累计内容算，不逐块相加（逐块相加误差会累积）
+          onProgress: (received) => setLiveTokens(estimateTokens(received)),
         });
         // 思考过程不写进 history：由独立的「思考视口」展示，避免两处重复渲染。
         // 也不清空，让用户生成结束后仍能展开滚动回看。
         setHistory((prev) => [...prev, { q, a: reply }]);
+        setLastRun({ kind: 'ask', elapsedMs: Date.now() - startedAt, ok: true });
         setStreaming('');
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        if (isAbortError(err)) {
+          setNotice('已中断');
+          setLastRun({ kind: 'ask', elapsedMs: Date.now() - startedAt, ok: false, aborted: true });
+        } else {
+          setError(err instanceof Error ? err.message : String(err));
+          setLastRun({ kind: 'ask', elapsedMs: Date.now() - startedAt, ok: false });
+        }
         setStreaming('');
       } finally {
         setPhase('awaiting');
@@ -787,7 +802,18 @@ export function App({
             width={width}
           />
           {error ? <ErrorPanel message={error} /> : null}
-          {phase === 'asking' && !streaming && !reasoning ? <StatusLine busyText="助教正在思考" /> : null}
+          {phase === 'asking' || (lastRun?.kind === 'ask' && !error) ? (
+            <StatusLine
+              busyText={streaming ? '助教正在回答' : '助教正在思考'}
+              tokens={liveTokens}
+              done={phase !== 'asking'}
+              doneText={lastRun?.aborted ? '已中断' : lastRun?.ok ? '回答完成' : '回答失败'}
+              elapsedMs={lastRun?.elapsedMs}
+              meta={config.mock ? 'Mock' : config.model}
+              aborted={lastRun?.aborted}
+              failed={!lastRun?.ok && !lastRun?.aborted}
+            />
+          ) : null}
 
           <Box marginTop={1} flexDirection="column">
             <InputBar

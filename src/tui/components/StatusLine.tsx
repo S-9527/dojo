@@ -1,25 +1,25 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { theme } from '../theme.js';
+import { SPINNER_INTERVAL_MS, formatCount, formatElapsed, spinnerFrames } from '../spinner.js';
 
 /**
  * 进行中/已完成的单行状态。
  *
- * 与 Loading 的区别：Loading 在任务结束时就卸载，屏幕上不留痕迹；
- * 这里任务完成后会**保留一行摘要**（耗时、模型名等），
- * 让人知道「刚才发生了什么、花了多久」，而不是突然消失。
+ * 布局参考 Claude Code 的状态行，从左到右依次是：
+ *   已用秒数 · 动画 + token 数 · esc 中断提示
+ * 任务结束后保留一行摘要，而不是像纯 Loading 那样直接消失 ——
+ * 否则用户会不知道「刚才到底跑完没有、花了多久」。
  */
 
-const FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-
 export interface StatusLineProps {
-  /** 进行中的文案，例如「大模型正在出题」 */
+  /** 进行中的文案，例如「正在出题」 */
   busyText: string;
   /** 完成后是否保留这一行 */
   done?: boolean;
-  /** 完成后的文案，例如「题目已生成」 */
+  /** 完成后的文案 */
   doneText?: string;
-  /** 耗时毫秒，完成后显示 */
+  /** 耗时毫秒 */
   elapsedMs?: number;
   /** 完成时的附加信息，例如模型名 */
   meta?: string;
@@ -27,8 +27,10 @@ export interface StatusLineProps {
   failed?: boolean;
   /** 已被中断：与失败区分开，用中性色 */
   aborted?: boolean;
-  /** 进行中时显示「Esc 中断」提示 */
+  /** 进行中显示「esc 中断」提示 */
   interruptHint?: boolean;
+  /** 已接收的 token 估算值；0 或缺省时不显示 */
+  tokens?: number;
 }
 
 export function StatusLine({
@@ -40,19 +42,21 @@ export function StatusLine({
   failed = false,
   aborted = false,
   interruptHint = true,
+  tokens = 0,
 }: StatusLineProps): React.JSX.Element {
+  const frames = React.useMemo(() => spinnerFrames(), []);
   const [frame, setFrame] = React.useState(0);
   const [elapsed, setElapsed] = React.useState(0);
 
-  // 进行中：spinner 每 80ms 走一帧
+  // 进行中：走动画帧
   React.useEffect(() => {
     if (done) return;
-    const timer = setInterval(() => setFrame((f) => (f + 1) % FRAMES.length), 80);
+    const timer = setInterval(() => setFrame((f) => (f + 1) % frames.length), SPINNER_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [done]);
+  }, [done, frames.length]);
 
-  // 进行中：每秒更新已用时间。
-  // 光有转圈看不出「卡住了」还是「还在跑」，秒数能给出可判断的信号。
+  // 进行中：每秒更新时间。
+  // 只有转圈看不出「卡住了」还是「还在跑」，秒数能给出可判断的信号。
   React.useEffect(() => {
     if (done) return;
     const startedAt = Date.now();
@@ -62,28 +66,35 @@ export function StatusLine({
   }, [done]);
 
   if (!done) {
+    const elapsedText = formatElapsed(elapsed);
     return (
       <Box marginTop={1}>
-        <Text color={theme.accent}>{FRAMES[frame]} </Text>
-        <Text color={theme.muted}>{busyText}…</Text>
-        {elapsed >= 1000 ? <Text color={theme.dim}>{`  ${(elapsed / 1000).toFixed(0)}s`}</Text> : null}
-        {interruptHint ? <Text color={theme.dim}>{'  Esc 中断'}</Text> : null}
+        {elapsedText ? <Text color={theme.dim}>{`${elapsedText}  `}</Text> : <Text color={theme.dim}>{'  '}</Text>}
+        <Text color={theme.accent}>{frames[frame]} </Text>
+        <Text color={theme.muted}>{busyText}</Text>
+        {tokens > 0 ? <Text color={theme.dim}>{`  ${formatCount(tokens)} tokens`}</Text> : null}
+        {interruptHint ? (
+          <Text>
+            <Text color={theme.dim}>{'  '}</Text>
+            <Text color={theme.dim} bold>
+              {'esc '}
+            </Text>
+            <Text color={theme.dim}>中断</Text>
+          </Text>
+        ) : null}
       </Box>
     );
   }
 
-  // 不足 0.1s 时显示 <0.1s，避免出现无意义的 0.0s
-  const seconds =
-    elapsedMs === undefined ? null : elapsedMs < 100 ? '<0.1s' : `${(elapsedMs / 1000).toFixed(1)}s`;
-
   const icon = aborted ? '⏹ ' : failed ? '✗ ' : '✓ ';
   const iconColor = aborted ? theme.warn : failed ? theme.danger : theme.correct;
+  const elapsedText = elapsedMs !== undefined ? formatElapsed(elapsedMs) || '<1s' : '';
 
   return (
     <Box marginTop={1}>
       <Text color={iconColor}>{icon}</Text>
       <Text color={theme.dim}>{doneText ?? '完成'}</Text>
-      {seconds ? <Text color={theme.dim}>{`  ${seconds}`}</Text> : null}
+      {elapsedText ? <Text color={theme.dim}>{`  ${elapsedText}`}</Text> : null}
       {meta ? <Text color={theme.dim}>{`  ${meta}`}</Text> : null}
     </Box>
   );

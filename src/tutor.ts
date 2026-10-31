@@ -46,6 +46,8 @@ export interface AskOptions {
   onDelta?: (chunk: string) => void;
   /** 思考过程增量（推理模型才有） */
   onReasoning?: (chunk: string) => void;
+  /** 进度回调：已接收的完整内容，用于 token 估算 */
+  onProgress?: (received: string) => void;
   signal?: AbortSignal;
 }
 
@@ -165,7 +167,7 @@ export class Tutor {
   /** 答疑（流式输出，边生成边回调）。 */
   async ask(
     question: string,
-    { exercise = null, history = [], onDelta, onReasoning, signal }: AskOptions = {},
+    { exercise = null, history = [], onDelta, onReasoning, onProgress, signal }: AskOptions = {},
   ): Promise<string> {
     return this.streamFn(
       this.config,
@@ -174,7 +176,7 @@ export class Tutor {
         { role: 'user', content: buildAskPrompt({ exercise, history }) },
         { role: 'user', content: question },
       ],
-      { onDelta, onReasoning, temperature: 0.5, maxTokens: this.budget(1500), signal },
+      { onDelta, onReasoning, onProgress, temperature: 0.5, maxTokens: this.budget(1500), signal },
     );
   }
 
