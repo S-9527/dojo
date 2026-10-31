@@ -159,6 +159,12 @@ export function App({
   const handleRequestError = React.useCallback(
     (err: unknown, startedAt: number, kind: 'exercise' | 'grade') => {
       const elapsedMs = Date.now() - startedAt;
+      // 必须在这里退出「进行中」阶段。之前只有 nextExercise 的 finally
+      // 做了这件事，而 submit 的错误路径没有 —— 于是中断虽然生效
+      // （请求确实取消了），界面却一直停在「正在判题」、计时器继续走，
+      // 看起来就像 Esc 没反应。
+      setPhase('awaiting');
+
       if (isAbortError(err)) {
         setNotice('已中断');
         setLastRun({ kind, elapsedMs, ok: false, aborted: true });
